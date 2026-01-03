@@ -742,12 +742,22 @@ const MeetingRoom = ({
         });
     }, [room?.id, currentUser?.id, displayName]);
 
+    // Pause captions when muted (only logged-in users get captions)
+    const effectiveCaptionsEnabled = captionsEnabled && !isMuted && isLoggedIn;
+
     const { isSupported, isListening, error: speechError, interim } = useSpeechCaptions({
-        enabled: captionsEnabled,
-        language: 'en-US',
+        enabled: effectiveCaptionsEnabled,
+        language: 'fil-PH', // Filipino/Tagalog, falls back to English
         onInterim: handleInterimSpeech,
         onFinal: handleFinalSpeech
     });
+
+    // Auto-enable captions for logged-in users only
+    useEffect(() => {
+        if (isLoggedIn && isSupported && !captionsEnabled) {
+            setCaptionsEnabled(true);
+        }
+    }, [isLoggedIn, isSupported]);
 
     // Leave room
     const handleLeave = async () => {
@@ -912,12 +922,13 @@ const MeetingRoom = ({
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '1rem' }}>
                         {/* Screen share display */}
                         {isScreenSharing && (
-                            <div style={{ flex: 2, marginBottom: '1rem', position: 'relative', background: 'var(--bg-tertiary)', borderRadius: '12px', overflow: 'hidden' }}>
+                            <div style={{ flex: 2, marginBottom: '1rem', position: 'relative', background: '#000', borderRadius: '12px', overflow: 'hidden', minHeight: '200px' }}>
                                 <video
                                     ref={screenVideoRef}
                                     autoPlay
+                                    muted
                                     playsInline
-                                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                    style={{ width: '100%', height: '100%', objectFit: 'contain', maxHeight: '50vh' }}
                                 />
                                 <div style={{ position: 'absolute', top: '0.5rem', left: '0.5rem', background: 'rgba(0,0,0,0.7)', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', color: 'var(--success)' }}>
                                     📺 Screen Sharing
