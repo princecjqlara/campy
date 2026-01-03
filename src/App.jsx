@@ -14,6 +14,7 @@ import CalendarView from './components/CalendarView';
 import HistoryModal from './components/HistoryModal';
 import LoginModal from './components/LoginModal';
 import ToastContainer from './components/ToastContainer';
+import MeetingRoom from './components/MeetingRoom';
 import { useSupabase } from './hooks/useSupabase';
 import { useNotifications } from './hooks/useNotifications';
 import { useStorage } from './hooks/useStorage';
@@ -37,6 +38,8 @@ function App() {
   const [showReports, setShowReports] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showMeetingRoom, setShowMeetingRoom] = useState(false);
+  const [meetingRoomSlug, setMeetingRoomSlug] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [currentClientId, setCurrentClientId] = useState(null);
@@ -48,6 +51,31 @@ function App() {
     const settings = JSON.parse(localStorage.getItem('campy_settings') || '{}');
     return settings.viewMode || 'kanban';
   }); // 'kanban' or 'table'
+
+  // Check for /room/:slug URL on load
+  useEffect(() => {
+    const path = window.location.pathname;
+    const roomMatch = path.match(/^\/room\/([a-zA-Z0-9]+)$/);
+    if (roomMatch) {
+      setMeetingRoomSlug(roomMatch[1]);
+      setShowMeetingRoom(true);
+    }
+
+    // Listen for popstate (back/forward)
+    const handlePopState = () => {
+      const newPath = window.location.pathname;
+      const match = newPath.match(/^\/room\/([a-zA-Z0-9]+)$/);
+      if (match) {
+        setMeetingRoomSlug(match[1]);
+        setShowMeetingRoom(true);
+      } else {
+        setShowMeetingRoom(false);
+        setMeetingRoomSlug(null);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const { isOnlineMode, initSupabase, signIn, signUp, signOut, getSession, isAdmin, getUserName, currentUser, currentUserProfile, getExpenses, saveExpenses, getAIPrompts, saveAIPrompts, getPackagePrices, savePackagePrices, getPackageDetails, savePackageDetails, refreshUserProfile, getAllUsers, syncAllData, addClientToSupabase, updateClientInSupabase, deleteClientFromSupabase } = useSupabase();
   const { unreadCount: notificationUnreadCount } = useNotifications(currentUser?.id);
@@ -419,6 +447,16 @@ function App() {
           currentUserId={currentUser?.id}
           currentUserName={currentUserProfile?.name || userName}
           users={allUsers}
+          onStartVideoCall={(meeting) => {
+            // Get room slug from meeting or room
+            const slug = meeting.room_slug;
+            if (slug) {
+              setMeetingRoomSlug(slug);
+              setShowMeetingRoom(true);
+              setShowCalendar(false);
+              window.history.pushState({}, '', `/room/${slug}`);
+            }
+          }}
         />
       )}
 
@@ -437,6 +475,23 @@ function App() {
           onLogin={handleLogin}
           onSignUp={handleSignUp}
           onOfflineMode={handleEnterOfflineMode}
+        />
+      )}
+
+      {showMeetingRoom && meetingRoomSlug && (
+        <MeetingRoom
+          roomSlug={meetingRoomSlug}
+          currentUser={currentUser || { id: null, email: null, name: currentUserName }}
+          onClose={() => {
+            setShowMeetingRoom(false);
+            setMeetingRoomSlug(null);
+            window.history.pushState({}, '', '/');
+          }}
+          onRoomNotFound={() => {
+            setShowMeetingRoom(false);
+            setMeetingRoomSlug(null);
+            window.history.pushState({}, '', '/');
+          }}
         />
       )}
 
