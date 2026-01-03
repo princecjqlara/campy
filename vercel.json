@@ -1,0 +1,12 @@
+{
+    "rewrites": [
+        {
+            "source": "/room/:slug*",
+            "destination": "/index.html"
+        },
+        {
+            "source": "/((?!assets|favicon|.*\\..*).*)",
+            "destination": "/index.html"
+        }
+    ]
+}
