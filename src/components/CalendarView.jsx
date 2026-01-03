@@ -75,18 +75,39 @@ const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName
     finally { setSaving(false); }
   };
 
-  const handleUpdateMeeting = async (status, notes) => {
+  const handleUpdateMeeting = async (status, notes, rescheduleData) => {
     const client = getSupabaseClient();
     if (!client || !selectedMeeting) return;
     try {
       setSaving(true);
       const oldStatus = selectedMeeting.status;
-      await client.from('calendar_events').update({ status, notes }).eq('id', selectedMeeting.id);
+
+      // Prepare update data
+      const updateData = { status, notes };
+
+      // If rescheduling, also update the times
+      if (status === 'rescheduled' && rescheduleData?.newStartTime && rescheduleData?.newEndTime) {
+        updateData.start_time = new Date(rescheduleData.newStartTime).toISOString();
+        updateData.end_time = new Date(rescheduleData.newEndTime).toISOString();
+      }
+
+      await client.from('calendar_events').update(updateData).eq('id', selectedMeeting.id);
+
       const mc = clients?.find(c => c.id === selectedMeeting.client_id);
-      if (status === 'rescheduled' && oldStatus !== 'rescheduled') await notificationService.notifyMeetingRescheduled(selectedMeeting, mc?.clientName || 'Unknown', mc?.assignedTo, currentUserName);
-      setEvents(prev => prev.map(e => e.id === selectedMeeting.id ? { ...e, status, notes } : e));
+      if (status === 'rescheduled' && oldStatus !== 'rescheduled') {
+        // Update the meeting object with new times for notification
+        const updatedMeeting = { ...selectedMeeting, ...updateData };
+        await notificationService.notifyMeetingRescheduled(updatedMeeting, mc?.clientName || 'Unknown', mc?.assignedTo, currentUserName);
+      }
+
+      // Update local state with new data
+      setEvents(prev => prev.map(e => e.id === selectedMeeting.id ? { ...e, ...updateData } : e));
       setShowMeetingDetails(false);
-    } catch (e) { alert('Error'); }
+      setSelectedMeeting(null);
+    } catch (e) {
+      console.error('Update error:', e);
+      alert('Error updating meeting');
+    }
     finally { setSaving(false); }
   };
 
@@ -305,18 +326,109 @@ const MeetingForm = ({ meetingForm, setMeetingForm, onClose, onSave, clients, sa
 const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, getClientName, saving, isMobile }) => {
   const [notes, setNotes] = useState(meeting.notes || '');
   const [status, setStatus] = useState(meeting.status || 'scheduled');
-  const statusOptions = [{ key: 'scheduled', label: 'Scheduled', color: '#3b82f6' }, { key: 'done', label: 'Done', color: '#22c55e' }, { key: 'rescheduled', label: 'Rescheduled', color: '#f59e0b' }, { key: 'cancelled', label: 'Cancelled', color: '#6b7280' }];
+  const [newStartTime, setNewStartTime] = useState('');
+  const [newEndTime, setNewEndTime] = useState('');
+  const statusOptions = [
+    { key: 'scheduled', label: 'Scheduled', color: '#3b82f6' },
+    { key: 'done', label: 'Done', color: '#22c55e' },
+    { key: 'rescheduled', label: 'Reschedule', color: '#f59e0b' },
+    { key: 'cancelled', label: 'Cancelled', color: '#6b7280' }
+  ];
+
+  const handleStatusChange = (newStatus) => {
+    setStatus(newStatus);
+    if (newStatus === 'rescheduled' && !newStartTime) {
+      // Pre-fill with current meeting time
+      const start = new Date(meeting.start_time);
+      const end = new Date(meeting.end_time);
+      setNewStartTime(start.toISOString().slice(0, 16));
+      setNewEndTime(end.toISOString().slice(0, 16));
+    }
+  };
+
+  const handleSave = () => {
+    onUpdate(status, notes, status === 'rescheduled' ? { newStartTime, newEndTime } : null);
+  };
 
   return (
     <div className="modal-overlay active" onClick={onClose} style={{ zIndex: 1002 }}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: isMobile ? '95%' : '450px', margin: 'auto' }}>
-        <div className="modal-header"><h3 style={{ fontSize: '1rem' }}>📅 {meeting.title}</h3><button className="modal-close" onClick={onClose}>✕</button></div>
-        <div className="modal-body">
-          <div style={{ marginBottom: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{new Date(meeting.start_time).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}{meeting.client_id && ` • ${getClientName(meeting.client_id)}`}</div>
-          <div className="form-group"><label className="form-label">Notes</label><textarea className="form-input" value={notes} onChange={e => setNotes(e.target.value)} rows={4} placeholder="Meeting notes..." /></div>
-          <div className="form-group"><label className="form-label">Status</label><div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>{statusOptions.map(s => <button key={s.key} onClick={() => setStatus(s.key)} style={{ padding: '0.5rem', background: status === s.key ? s.color : 'var(--bg-secondary)', color: status === s.key ? 'white' : 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.75rem' }}>{s.label}</button>)}</div></div>
+        <div className="modal-header">
+          <h3 style={{ fontSize: '1rem' }}>📅 {meeting.title}</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between' }}><button className="btn" onClick={onDelete} style={{ background: '#ef4444', color: 'white', fontSize: '0.75rem' }}>Delete</button><div style={{ display: 'flex', gap: '0.5rem' }}><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={() => onUpdate(status, notes)} disabled={saving}>{saving ? '...' : 'Save'}</button></div></div>
+        <div className="modal-body">
+          <div style={{ marginBottom: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            {new Date(meeting.start_time).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
+            {meeting.client_id && ` • ${getClientName(meeting.client_id)}`}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Notes</label>
+            <textarea className="form-input" value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Meeting notes..." />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Status</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>
+              {statusOptions.map(s => (
+                <button
+                  key={s.key}
+                  onClick={() => handleStatusChange(s.key)}
+                  style={{
+                    padding: '0.5rem',
+                    background: status === s.key ? s.color : 'var(--bg-secondary)',
+                    color: status === s.key ? 'white' : 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Reschedule Date/Time Picker */}
+          {status === 'rescheduled' && (
+            <div style={{ background: 'rgba(245, 158, 11, 0.1)', padding: '1rem', borderRadius: '8px', marginTop: '0.5rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.75rem', color: '#f59e0b' }}>
+                📅 Select New Date & Time
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.7rem' }}>New Start</label>
+                  <input
+                    type="datetime-local"
+                    className="form-input"
+                    value={newStartTime}
+                    onChange={e => setNewStartTime(e.target.value)}
+                    style={{ fontSize: '0.8rem', padding: '0.4rem' }}
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: '0.7rem' }}>New End</label>
+                  <input
+                    type="datetime-local"
+                    className="form-input"
+                    value={newEndTime}
+                    onChange={e => setNewEndTime(e.target.value)}
+                    style={{ fontSize: '0.8rem', padding: '0.4rem' }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <button className="btn" onClick={onDelete} style={{ background: '#ef4444', color: 'white', fontSize: '0.75rem' }}>Delete</button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? '...' : 'Save'}</button>
+          </div>
+        </div>
       </div>
     </div>
   );
