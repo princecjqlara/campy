@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getSupabaseClient } from '../services/supabase';
 import { notificationService } from '../services/notificationService';
 
-const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName, users = [] }) => {
+const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName, users = [], onStartVideoCall }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -180,7 +180,7 @@ const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName
 
       {showDayView && selectedDay && <GanttDayView date={selectedDay} events={getEventsForDate(selectedDay)} onClose={() => setShowDayView(false)} onSchedule={() => handleScheduleMeeting(selectedDay)} onEventClick={(e) => { setSelectedMeeting(e); setShowMeetingDetails(true); setShowDayView(false); }} getEventColor={getEventColor} getClientName={getClientName} isMobile={isMobile} />}
       {showMeetingForm && <MeetingForm meetingForm={meetingForm} setMeetingForm={setMeetingForm} onClose={() => setShowMeetingForm(false)} onSave={handleSaveMeeting} clients={clients} saving={saving} isMobile={isMobile} />}
-      {showMeetingDetails && selectedMeeting && <MeetingDetailsModal meeting={selectedMeeting} onClose={() => { setShowMeetingDetails(false); setSelectedMeeting(null); }} onUpdate={handleUpdateMeeting} onDelete={() => handleDeleteEvent(selectedMeeting.id)} getClientName={getClientName} saving={saving} isMobile={isMobile} />}
+      {showMeetingDetails && selectedMeeting && <MeetingDetailsModal meeting={selectedMeeting} onClose={() => { setShowMeetingDetails(false); setSelectedMeeting(null); }} onUpdate={handleUpdateMeeting} onDelete={() => handleDeleteEvent(selectedMeeting.id)} onStartVideoCall={onStartVideoCall} getClientName={getClientName} saving={saving} isMobile={isMobile} />}
     </div>
   );
 };
@@ -357,11 +357,14 @@ const MeetingForm = ({ meetingForm, setMeetingForm, onClose, onSave, clients, sa
   </div>
 );
 
-const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, getClientName, saving, isMobile }) => {
+const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, onStartVideoCall, getClientName, saving, isMobile }) => {
   const [notes, setNotes] = useState(meeting.notes || '');
   const [status, setStatus] = useState(meeting.status || 'scheduled');
   const [newStartTime, setNewStartTime] = useState('');
   const [newEndTime, setNewEndTime] = useState('');
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [roomLink, setRoomLink] = useState(meeting.room_slug ? `${window.location.origin}/room/${meeting.room_slug}` : null);
+
   const statusOptions = [
     { key: 'scheduled', label: 'Scheduled', color: '#3b82f6' },
     { key: 'done', label: 'Done', color: '#22c55e' },
@@ -372,7 +375,6 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, getClientNa
   const handleStatusChange = (newStatus) => {
     setStatus(newStatus);
     if (newStatus === 'rescheduled' && !newStartTime) {
-      // Pre-fill with current meeting time
       const start = new Date(meeting.start_time);
       const end = new Date(meeting.end_time);
       setNewStartTime(start.toISOString().slice(0, 16));
@@ -384,9 +386,52 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, getClientNa
     onUpdate(status, notes, status === 'rescheduled' ? { newStartTime, newEndTime } : null);
   };
 
+  const handleCreateRoom = async () => {
+    setCreatingRoom(true);
+    try {
+      const client = (await import('../services/supabase')).getSupabaseClient();
+      if (!client) throw new Error('No client');
+
+      // Generate slug
+      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+      let slug = '';
+      for (let i = 0; i < 8; i++) slug += chars[Math.floor(Math.random() * chars.length)];
+
+      // Create room
+      const { data, error } = await client.from('meeting_rooms').insert({
+        room_slug: slug,
+        title: meeting.title,
+        calendar_event_id: meeting.id,
+        scheduled_at: meeting.start_time
+      }).select().single();
+
+      if (error) throw error;
+
+      const link = `${window.location.origin}/room/${slug}`;
+      setRoomLink(link);
+
+      // Copy to clipboard
+      navigator.clipboard.writeText(link);
+      alert('Room created! Link copied to clipboard.');
+
+    } catch (e) {
+      console.error('Failed to create room:', e);
+      alert('Failed to create room');
+    } finally {
+      setCreatingRoom(false);
+    }
+  };
+
+  const copyRoomLink = () => {
+    if (roomLink) {
+      navigator.clipboard.writeText(roomLink);
+      alert('Link copied!');
+    }
+  };
+
   return (
     <div className="modal-overlay active" onClick={onClose} style={{ zIndex: 1002 }}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: isMobile ? '95%' : '450px', margin: 'auto' }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: isMobile ? '95%' : '500px', margin: 'auto' }}>
         <div className="modal-header">
           <h3 style={{ fontSize: '1rem' }}>📅 {meeting.title}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -395,6 +440,37 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, getClientNa
           <div style={{ marginBottom: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             {new Date(meeting.start_time).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
             {meeting.client_id && ` • ${getClientName(meeting.client_id)}`}
+          </div>
+
+          {/* Video Call Section */}
+          <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '1rem', borderRadius: '8px', marginBottom: '1rem' }}>
+            <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.75rem', color: '#3b82f6' }}>
+              🎥 Video Call
+            </div>
+            {roomLink ? (
+              <div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <button className="btn btn-primary" onClick={() => onStartVideoCall?.(meeting)} style={{ flex: 1 }}>
+                    ▶️ Join Call
+                  </button>
+                  <button className="btn btn-secondary" onClick={copyRoomLink}>
+                    🔗 Copy
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', wordBreak: 'break-all' }}>
+                  {roomLink}
+                </div>
+              </div>
+            ) : (
+              <button
+                className="btn btn-secondary"
+                onClick={handleCreateRoom}
+                disabled={creatingRoom}
+                style={{ width: '100%' }}
+              >
+                {creatingRoom ? 'Creating...' : '+ Create Video Room'}
+              </button>
+            )}
           </div>
 
           <div className="form-group">
@@ -425,7 +501,6 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, getClientNa
             </div>
           </div>
 
-          {/* Reschedule Date/Time Picker */}
           {status === 'rescheduled' && (
             <div style={{ background: 'rgba(245, 158, 11, 0.1)', padding: '1rem', borderRadius: '8px', marginTop: '0.5rem' }}>
               <div style={{ fontSize: '0.75rem', fontWeight: '600', marginBottom: '0.75rem', color: '#f59e0b' }}>
@@ -434,23 +509,11 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, getClientNa
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label" style={{ fontSize: '0.7rem' }}>New Start</label>
-                  <input
-                    type="datetime-local"
-                    className="form-input"
-                    value={newStartTime}
-                    onChange={e => setNewStartTime(e.target.value)}
-                    style={{ fontSize: '0.8rem', padding: '0.4rem' }}
-                  />
+                  <input type="datetime-local" className="form-input" value={newStartTime} onChange={e => setNewStartTime(e.target.value)} style={{ fontSize: '0.8rem', padding: '0.4rem' }} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label" style={{ fontSize: '0.7rem' }}>New End</label>
-                  <input
-                    type="datetime-local"
-                    className="form-input"
-                    value={newEndTime}
-                    onChange={e => setNewEndTime(e.target.value)}
-                    style={{ fontSize: '0.8rem', padding: '0.4rem' }}
-                  />
+                  <input type="datetime-local" className="form-input" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} style={{ fontSize: '0.8rem', padding: '0.4rem' }} />
                 </div>
               </div>
             </div>
