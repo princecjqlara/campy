@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import TagSelector from './TagSelector';
 
 const ClientModal = ({ clientId, client, onClose, onSave, onDelete }) => {
   const [activeTab, setActiveTab] = useState('basic');
@@ -30,12 +31,13 @@ const ClientModal = ({ clientId, client, onClose, onSave, onDelete }) => {
     paymentSchedule: 'monthly',
     monthsWithClient: 0,
     startDate: '',
-    phase: 'proposal-sent',
+    phase: 'booked',
     autoSwitch: false,
     autoSwitchDays: 7,
     nextPhaseDate: '',
     subscriptionUsage: 0,
-    testingRound: 1
+    testingRound: 1,
+    remainingCredits: 0
   });
 
   useEffect(() => {
@@ -69,12 +71,13 @@ const ClientModal = ({ clientId, client, onClose, onSave, onDelete }) => {
         paymentSchedule: client.paymentSchedule || 'monthly',
         monthsWithClient: client.monthsWithClient || 0,
         startDate: client.startDate || '',
-        phase: client.phase || 'proposal-sent',
+        phase: client.phase || 'booked',
         autoSwitch: client.autoSwitch || false,
         autoSwitchDays: client.autoSwitchDays || 7,
         nextPhaseDate: client.nextPhaseDate || '',
         subscriptionUsage: client.subscriptionUsage || 0,
-        testingRound: client.testingRound || 1
+        testingRound: client.testingRound || 1,
+        remainingCredits: client.remainingCredits || 0
       });
     } else {
       // Reset form when creating new client
@@ -127,6 +130,7 @@ const ClientModal = ({ clientId, client, onClose, onSave, onDelete }) => {
       nextPhaseDate: formData.nextPhaseDate,
       subscriptionUsage: formData.subscriptionUsage || 0,
       testingRound: formData.testingRound || 1,
+      remainingCredits: formData.remainingCredits || 0,
       subscriptionStarted: formData.phase === 'testing' || formData.phase === 'running'
     });
   };
@@ -456,6 +460,20 @@ const ClientModal = ({ clientId, client, onClose, onSave, onDelete }) => {
                     />
                   </div>
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Remaining Subscription Credits</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={formData.remainingCredits}
+                    onChange={(e) => setFormData({ ...formData, remainingCredits: parseInt(e.target.value) || 0 })}
+                    min="0"
+                    placeholder="0"
+                  />
+                  <small style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.25rem', display: 'block' }}>
+                    Number of credits remaining in the client's subscription
+                  </small>
+                </div>
               </div>
             )}
 
@@ -468,11 +486,11 @@ const ClientModal = ({ clientId, client, onClose, onSave, onDelete }) => {
                       value={formData.phase}
                       onChange={(e) => setFormData({ ...formData, phase: e.target.value })}
                     >
-                      <option value="proposal-sent">📧 Proposal Sent</option>
-                      <option value="booked">📅 Booked Meeting</option>
-                      <option value="preparing">Preparing</option>
-                      <option value="testing">Testing</option>
-                      <option value="running">Running</option>
+                      <option value="booked">📅 Booked</option>
+                      <option value="follow-up">📞 Follow Up</option>
+                      <option value="preparing">⏳ Preparing</option>
+                      <option value="testing">🧪 Testing</option>
+                      <option value="running">🚀 Running</option>
                     </select>
                 </div>
 

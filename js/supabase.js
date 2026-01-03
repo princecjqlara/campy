@@ -303,6 +303,7 @@ const Supabase = {
             subscription_usage: client.subscriptionUsage,
             testing_round: client.testingRound,
             subscription_started: client.subscriptionStarted,
+            remaining_credits: client.remainingCredits,
             resubscription_count: client.resubscriptionCount,
             ads_expense: client.adsExpense,
             assigned_to: client.assignedTo || null
@@ -334,6 +335,7 @@ const Supabase = {
             subscriptionUsage: row.subscription_usage,
             testingRound: row.testing_round,
             subscriptionStarted: row.subscription_started,
+            remainingCredits: row.remaining_credits,
             resubscriptionCount: row.resubscription_count,
             adsExpense: row.ads_expense,
             assignedTo: row.assigned_to,

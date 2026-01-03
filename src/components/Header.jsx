@@ -1,6 +1,6 @@
 import React from 'react';
 
-const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onThemeToggle, onAddClient, onAdminSettings, onNotifications, onLogout, isOnlineMode, currentUserEmail, unreadNotificationCount = 0 }) => {
+const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onThemeToggle, onAddClient, onAdminSettings, onNotifications, onReports, onCalendar, onTeamPerformance, onLogout, isOnlineMode, currentUserEmail, unreadNotificationCount = 0 }) => {
   return (
     <header className="app-header">
       <div className="app-logo">
@@ -45,6 +45,36 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
         >
           ⚙️ Settings
         </button>
+        {onReports && (
+          <button 
+            className="btn btn-secondary admin-only" 
+            id="reportsBtn"
+            title="Reports & Analytics"
+            onClick={onReports}
+          >
+            📊 Reports
+          </button>
+        )}
+        {onTeamPerformance && (
+          <button 
+            className="btn btn-secondary admin-only" 
+            id="teamPerformanceBtn"
+            title="Team Performance & Leaderboard"
+            onClick={onTeamPerformance}
+          >
+            🏆 Team Performance
+          </button>
+        )}
+        {onCalendar && (
+          <button 
+            className="btn btn-secondary" 
+            id="calendarBtn"
+            title="Calendar View"
+            onClick={onCalendar}
+          >
+            📅 Calendar
+          </button>
+        )}
         {isOnlineMode && (
           <button 
             className="btn btn-secondary" 
@@ -76,7 +106,7 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
           </button>
         )}
         <button 
-          className="btn btn-primary user-only" 
+          className="btn btn-primary" 
           id="addClientBtn"
           onClick={onAddClient}
         >

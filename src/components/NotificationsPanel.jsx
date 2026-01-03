@@ -33,8 +33,17 @@ const NotificationsPanel = ({ isOpen, onClose, currentUserId }) => {
 
       const { data, error } = await query;
 
-      if (error) throw error;
-      setNotifications(data || []);
+      if (error) {
+        // If table doesn't exist yet, just show empty state
+        if (error.code === '42P01') {
+          console.warn('Notifications table not found. Run database migration.');
+          setNotifications([]);
+        } else {
+          throw error;
+        }
+      } else {
+        setNotifications(data || []);
+      }
     } catch (error) {
       console.error('Error loading notifications:', error);
     } finally {

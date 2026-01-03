@@ -22,7 +22,10 @@ const CommunicationLog = ({ clientId, isOpen, onClose, currentUserId }) => {
 
   const loadCommunications = async () => {
     const client = getSupabaseClient();
-    if (!client || !clientId) return;
+    if (!client || !clientId) {
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -32,10 +35,20 @@ const CommunicationLog = ({ clientId, isOpen, onClose, currentUserId }) => {
         .eq('client_id', clientId)
         .order('occurred_at', { ascending: false });
 
-      if (error) throw error;
-      setCommunications(data || []);
+      if (error) {
+        // If table doesn't exist yet, just show empty state
+        if (error.code === '42P01') {
+          console.warn('Communications table not found. Run database migration.');
+          setCommunications([]);
+        } else {
+          throw error;
+        }
+      } else {
+        setCommunications(data || []);
+      }
     } catch (error) {
       console.error('Error loading communications:', error);
+      setCommunications([]);
     } finally {
       setLoading(false);
     }

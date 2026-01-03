@@ -8,7 +8,9 @@ const FiltersBar = ({
   filterPackage,
   onPackageFilterChange,
   filterPayment,
-  onPaymentFilterChange
+  onPaymentFilterChange,
+  viewMode,
+  onViewModeChange
 }) => {
   return (
     <section className="filters-bar">
@@ -22,6 +24,26 @@ const FiltersBar = ({
           onChange={(e) => onSearchChange(e.target.value)}
         />
       </div>
+      {onViewModeChange && (
+        <div className="view-toggle" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            className={`btn btn-sm ${viewMode === 'kanban' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => onViewModeChange('kanban')}
+            title="Kanban View"
+            style={{ padding: '0.5rem 1rem' }}
+          >
+            📋 Kanban
+          </button>
+          <button
+            className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => onViewModeChange('table')}
+            title="Table View"
+            style={{ padding: '0.5rem 1rem' }}
+          >
+            📊 Table
+          </button>
+        </div>
+      )}
       <select
         className="form-select filter-select"
         id="filterPhase"
@@ -29,11 +51,11 @@ const FiltersBar = ({
         onChange={(e) => onPhaseFilterChange(e.target.value)}
       >
         <option value="">All Phases</option>
-        <option value="proposal-sent">📧 Proposal Sent</option>
-        <option value="booked">Booked</option>
-        <option value="preparing">Preparing</option>
-        <option value="testing">Testing</option>
-        <option value="running">Running</option>
+        <option value="booked">📅 Booked</option>
+        <option value="follow-up">📞 Follow Up</option>
+        <option value="preparing">⏳ Preparing</option>
+        <option value="testing">🧪 Testing</option>
+        <option value="running">🚀 Running</option>
       </select>
       <select
         className="form-select filter-select"

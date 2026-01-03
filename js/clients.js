@@ -110,6 +110,7 @@ const Clients = {
       subscriptionUsage: formData.subscriptionUsage || 0,
       testingRound: formData.testingRound || 1,
       subscriptionStarted: formData.subscriptionStarted || false,
+      remainingCredits: formData.remainingCredits || 0,
 
       // Resubscription
       resubscriptionCount: formData.resubscriptionCount || 0,

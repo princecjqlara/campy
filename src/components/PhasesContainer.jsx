@@ -1,8 +1,9 @@
 import React from 'react';
 import PhaseColumn from './PhaseColumn';
+import ClientsTable from './ClientsTable';
 
-const PhasesContainer = ({ clients, filters, onViewClient, onEditClient, onMoveClient }) => {
-  const phases = ['proposal-sent', 'booked', 'preparing', 'testing', 'running'];
+const PhasesContainer = ({ clients, filters, onViewClient, onEditClient, onMoveClient, viewMode = 'kanban' }) => {
+  const phases = ['booked', 'follow-up', 'preparing', 'testing', 'running'];
   
   const getClientsByPhase = (phase) => {
     let filtered = clients.filter(c => c.phase === phase);
@@ -32,6 +33,20 @@ const PhasesContainer = ({ clients, filters, onViewClient, onEditClient, onMoveC
     filtered.sort((a, b) => (a.priority || 999) - (b.priority || 999));
     return filtered;
   };
+
+  if (viewMode === 'table') {
+    return (
+      <section className="clients-table-section" id="clientsTableSection">
+        <ClientsTable
+          clients={clients}
+          filters={filters}
+          onViewClient={onViewClient}
+          onEditClient={onEditClient}
+          onMoveClient={onMoveClient}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="phases-container" id="phasesContainer">

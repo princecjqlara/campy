@@ -35,7 +35,6 @@ UPDATE users SET role = 'admin' WHERE email = 'aresmedia2026@gmail.com';
 -- ============================================
 CREATE TABLE IF NOT EXISTS clients (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  project_name TEXT NOT NULL,
   client_name TEXT NOT NULL,
   business_name TEXT,
   contact_details TEXT,
@@ -64,6 +63,7 @@ CREATE TABLE IF NOT EXISTS clients (
   subscription_usage INTEGER DEFAULT 0,
   testing_round INTEGER DEFAULT 1,
   subscription_started BOOLEAN DEFAULT false,
+  remaining_credits INTEGER DEFAULT 0,
   
   -- Resubscription
   resubscription_count INTEGER DEFAULT 0,

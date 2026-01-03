@@ -12,6 +12,7 @@ const ClientCard = ({ client, onView, onEdit }) => {
 
   const handleDragStart = (e) => {
     e.dataTransfer.setData('text/plain', client.id);
+    e.dataTransfer.effectAllowed = 'move';
     e.currentTarget.classList.add('dragging');
     e.currentTarget.style.cursor = 'grabbing';
   };
@@ -72,9 +73,23 @@ const ClientCard = ({ client, onView, onEdit }) => {
           ))}
         </div>
       )}
-      <div className="client-actions">
-        <button className="btn btn-sm btn-ghost" onClick={onView}>👁️ View</button>
-        <button className="btn btn-sm btn-ghost" onClick={onEdit}>✏️ Edit</button>
+      <div className="client-actions" onMouseDown={(e) => e.stopPropagation()}>
+        <button 
+          className="btn btn-sm btn-ghost" 
+          onClick={onView}
+          draggable="false"
+          onDragStart={(e) => e.preventDefault()}
+        >
+          👁️ View
+        </button>
+        <button 
+          className="btn btn-sm btn-ghost" 
+          onClick={onEdit}
+          draggable="false"
+          onDragStart={(e) => e.preventDefault()}
+        >
+          ✏️ Edit
+        </button>
       </div>
     </div>
   );

@@ -6,10 +6,16 @@ import PhasesContainer from './components/PhasesContainer';
 import ClientModal from './components/ClientModal';
 import ViewClientModal from './components/ViewClientModal';
 import AdminSettingsModal from './components/AdminSettingsModal';
+import TeamPerformanceModal from './components/TeamPerformanceModal';
+import NotificationsPanel from './components/NotificationsPanel';
+import CommunicationLog from './components/CommunicationLog';
+import ReportsDashboard from './components/ReportsDashboard';
+import CalendarView from './components/CalendarView';
 import HistoryModal from './components/HistoryModal';
 import LoginModal from './components/LoginModal';
 import ToastContainer from './components/ToastContainer';
 import { useSupabase } from './hooks/useSupabase';
+import { useNotifications } from './hooks/useNotifications';
 import { useStorage } from './hooks/useStorage';
 import { useClients } from './hooks/useClients';
 import { usePhases } from './hooks/usePhases';
@@ -25,15 +31,25 @@ function App() {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showAdminSettings, setShowAdminSettings] = useState(false);
   const [showTeamPerformance, setShowTeamPerformance] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showCommunicationLog, setShowCommunicationLog] = useState(false);
+  const [showReports, setShowReports] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [allUsers, setAllUsers] = useState([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [currentClientId, setCurrentClientId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPhase, setFilterPhase] = useState('');
   const [filterPackage, setFilterPackage] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
+  const [viewMode, setViewMode] = useState(() => {
+    const settings = JSON.parse(localStorage.getItem('campy_settings') || '{}');
+    return settings.viewMode || 'kanban';
+  }); // 'kanban' or 'table'
 
   const { isOnlineMode, initSupabase, signIn, signUp, signOut, getSession, isAdmin, getUserName, currentUser, currentUserProfile, getExpenses, saveExpenses, getAIPrompts, saveAIPrompts, getPackagePrices, savePackagePrices, refreshUserProfile, getAllUsers } = useSupabase();
+  const { unreadCount: notificationUnreadCount } = useNotifications(currentUser?.id);
   const { clients, addClient, updateClient, deleteClient, getClient } = useClients();
   const { metrics, updateMetrics } = useMetrics(clients);
   const { renderAllPhases, moveToNextPhase, moveClientToPhase } = usePhases(clients, {
@@ -41,7 +57,7 @@ function App() {
     filterPhase,
     filterPackage,
     filterPayment
-  });
+  }, currentUser);
 
   useEffect(() => {
     // Initialize theme
@@ -118,6 +134,11 @@ function App() {
       loadUsers();
     }
   }, [showAdminSettings, showTeamPerformance, isOnlineMode, isAdmin, getAllUsers]);
+
+  // Update unread notification count
+  useEffect(() => {
+    setUnreadNotificationCount(notificationUnreadCount);
+  }, [notificationUnreadCount]);
 
   const handleLogin = async (email, password) => {
     try {
@@ -215,9 +236,14 @@ function App() {
         onThemeToggle={handleToggleTheme}
         onAddClient={handleOpenAddModal}
         onAdminSettings={() => setShowAdminSettings(true)}
+        onNotifications={() => setShowNotifications(true)}
+        onReports={() => setShowReports(true)}
+        onCalendar={() => setShowCalendar(true)}
+        onTeamPerformance={() => setShowTeamPerformance(true)}
         onLogout={handleLogout}
         isOnlineMode={isOnlineMode}
         currentUserEmail={currentUser?.email}
+        unreadNotificationCount={unreadNotificationCount}
       />
 
       <StatsGrid metrics={metrics} role={role} />
@@ -231,15 +257,26 @@ function App() {
         onPackageFilterChange={setFilterPackage}
         filterPayment={filterPayment}
         onPaymentFilterChange={setFilterPayment}
+        viewMode={viewMode}
+        onViewModeChange={(mode) => {
+          setViewMode(mode);
+          const settings = JSON.parse(localStorage.getItem('campy_settings') || '{}');
+          localStorage.setItem('campy_settings', JSON.stringify({ ...settings, viewMode: mode }));
+        }}
       />
 
       <PhasesContainer
         clients={clients}
         filters={{ searchTerm, filterPhase, filterPackage, filterPayment }}
+        viewMode={viewMode}
         onViewClient={handleOpenViewModal}
         onEditClient={handleOpenEditModal}
         onMoveClient={async (clientId, targetPhase) => {
-          await moveClientToPhase(clientId, targetPhase);
+          try {
+            await moveClientToPhase(clientId, targetPhase);
+          } catch (error) {
+            console.error('Error moving client to phase:', error);
+          }
         }}
       />
 
@@ -271,6 +308,9 @@ function App() {
             setShowViewModal(false);
             handleOpenEditModal(currentClientId);
           }}
+          onViewCommunication={() => {
+            setShowCommunicationLog(true);
+          }}
         />
       )}
 
@@ -295,6 +335,44 @@ function App() {
           clients={clients}
           users={allUsers}
           onClose={() => setShowTeamPerformance(false)}
+        />
+      )}
+
+      {showNotifications && (
+        <NotificationsPanel
+          isOpen={showNotifications}
+          onClose={() => setShowNotifications(false)}
+          currentUserId={currentUser?.id}
+        />
+      )}
+
+      {showCommunicationLog && (
+        <CommunicationLog
+          clientId={currentClientId}
+          isOpen={showCommunicationLog}
+          onClose={() => {
+            setShowCommunicationLog(false);
+            setCurrentClientId(null);
+          }}
+          currentUserId={currentUser?.id}
+        />
+      )}
+
+      {showReports && (
+        <ReportsDashboard
+          clients={clients}
+          users={allUsers}
+          isOpen={showReports}
+          onClose={() => setShowReports(false)}
+        />
+      )}
+
+      {showCalendar && (
+        <CalendarView
+          clients={clients}
+          isOpen={showCalendar}
+          onClose={() => setShowCalendar(false)}
+          currentUserId={currentUser?.id}
         />
       )}
 

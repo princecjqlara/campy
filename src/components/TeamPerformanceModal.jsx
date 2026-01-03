@@ -1,8 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { formatPrice, getPackagePrice } from '../utils/clients';
+import { getSupabaseClient } from '../services/supabase';
 
-const TeamPerformanceModal = ({ clients, users, onClose }) => {
+const TeamPerformanceModal = ({ clients = [], users = [], onClose }) => {
   const [selectedUser, setSelectedUser] = useState('all');
+  const [viewMode, setViewMode] = useState('overview'); // 'overview', 'leaderboard', 'activity'
+  const [stageHistory, setStageHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   // Calculate team performance metrics
   const teamMetrics = useMemo(() => {
@@ -126,6 +130,109 @@ const TeamPerformanceModal = ({ clients, users, onClose }) => {
     return metrics;
   }, [clients, users]);
 
+  // Load stage history for activity tracking
+  useEffect(() => {
+    const loadStageHistory = async () => {
+      const client = getSupabaseClient();
+      if (!client) return;
+
+      try {
+        setLoading(true);
+        const { data, error } = await client
+          .from('stage_history')
+          .select('*')
+          .order('timestamp', { ascending: false })
+          .limit(500);
+
+        if (!error && data) {
+          setStageHistory(data);
+        }
+      } catch (err) {
+        console.error('Error loading stage history:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStageHistory();
+  }, []);
+
+  // Calculate user activity metrics
+  const userActivity = useMemo(() => {
+    const activity = {};
+    
+    users.forEach(user => {
+      activity[user.id] = {
+        userId: user.id,
+        userName: user.name || user.email,
+        userEmail: user.email,
+        clientsCreated: 0,
+        phaseChanges: 0,
+        lastActivity: null,
+        recentActions: []
+      };
+    });
+
+    // Count clients created by each user
+    clients.forEach(client => {
+      if (client.createdBy) {
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(client.createdBy)) {
+          if (activity[client.createdBy]) {
+            activity[client.createdBy].clientsCreated++;
+          }
+        }
+      }
+    });
+
+    // Count phase changes by each user
+    stageHistory.forEach(history => {
+      if (history.changed_by) {
+        if (activity[history.changed_by]) {
+          activity[history.changed_by].phaseChanges++;
+          const timestamp = new Date(history.timestamp);
+          if (!activity[history.changed_by].lastActivity || timestamp > new Date(activity[history.changed_by].lastActivity)) {
+            activity[history.changed_by].lastActivity = history.timestamp;
+          }
+          // Add to recent actions (last 10)
+          if (activity[history.changed_by].recentActions.length < 10) {
+            activity[history.changed_by].recentActions.push({
+              action: `Moved client to ${history.to_phase}`,
+              timestamp: history.timestamp,
+              clientId: history.client_id
+            });
+          }
+        }
+      }
+    });
+
+    // Sort recent actions by timestamp
+    Object.values(activity).forEach(act => {
+      act.recentActions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    });
+
+    return activity;
+  }, [users, clients, stageHistory]);
+
+  // Leaderboard rankings
+  const leaderboard = useMemo(() => {
+    const members = Object.values(teamMetrics)
+      .filter(m => m.userId !== 'all' && m.userId !== 'unassigned')
+      .map(member => ({
+        ...member,
+        rank: 0, // Will be set below
+        score: member.netProfit + (member.totalClients * 100) + (member.running * 500) // Scoring system
+      }))
+      .sort((a, b) => b.score - a.score);
+
+    // Assign ranks
+    members.forEach((member, index) => {
+      member.rank = index + 1;
+    });
+
+    return members;
+  }, [teamMetrics]);
+
   const currentMetrics = teamMetrics[selectedUser] || teamMetrics.all;
   const teamMembers = Object.values(teamMetrics).filter(m => m.userId !== 'all' && m.userId !== 'unassigned');
 
@@ -137,25 +244,59 @@ const TeamPerformanceModal = ({ clients, users, onClose }) => {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
-          {/* Team Member Selector */}
-          <div style={{ marginBottom: '2rem' }}>
-            <label className="form-label" style={{ marginBottom: '0.5rem', display: 'block' }}>
-              View Performance For:
-            </label>
-            <select
-              className="form-select"
-              value={selectedUser}
-              onChange={(e) => setSelectedUser(e.target.value)}
-              style={{ width: '100%', maxWidth: '400px' }}
+          {/* View Mode Tabs */}
+          <div style={{ 
+            display: 'flex', 
+            gap: '0.5rem', 
+            marginBottom: '1.5rem',
+            borderBottom: '2px solid var(--border-color)',
+            paddingBottom: '0.5rem'
+          }}>
+            <button
+              className={`btn ${viewMode === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setViewMode('overview')}
+              style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}
             >
-              <option value="all">All Team Members</option>
-              {teamMembers.map(member => (
-                <option key={member.userId} value={member.userId}>
-                  {member.userName} ({member.userEmail})
-                </option>
-              ))}
-            </select>
+              📊 Overview
+            </button>
+            <button
+              className={`btn ${viewMode === 'leaderboard' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setViewMode('leaderboard')}
+              style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}
+            >
+              🏆 Leaderboard
+            </button>
+            <button
+              className={`btn ${viewMode === 'activity' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setViewMode('activity')}
+              style={{ fontSize: '0.875rem', padding: '0.5rem 1rem' }}
+            >
+              📈 User Activity
+            </button>
           </div>
+
+          {/* Overview Mode */}
+          {viewMode === 'overview' && (
+            <>
+              {/* Team Member Selector */}
+              <div style={{ marginBottom: '2rem' }}>
+                <label className="form-label" style={{ marginBottom: '0.5rem', display: 'block' }}>
+                  View Performance For:
+                </label>
+                <select
+                  className="form-select"
+                  value={selectedUser}
+                  onChange={(e) => setSelectedUser(e.target.value)}
+                  style={{ width: '100%', maxWidth: '400px' }}
+                >
+                  <option value="all">All Team Members</option>
+                  {teamMembers.map(member => (
+                    <option key={member.userId} value={member.userId}>
+                      {member.userName} ({member.userEmail})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
           {/* Performance Stats Grid */}
           <div style={{ 
@@ -213,27 +354,88 @@ const TeamPerformanceModal = ({ clients, users, onClose }) => {
             </div>
           </div>
 
-          {/* Team Members Breakdown */}
-          {selectedUser === 'all' && (
+              {/* Team Members Breakdown */}
+              {selectedUser === 'all' && (
+                <div>
+                  <h4 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>Team Members Breakdown</h4>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                          <th style={{ padding: '0.75rem', textAlign: 'left' }}>Team Member</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'center' }}>Total Clients</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'center' }}>Running</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'center' }}>Paid</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'right' }}>Revenue</th>
+                          <th style={{ padding: '0.75rem', textAlign: 'right' }}>Profit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teamMembers
+                          .sort((a, b) => b.monthlyRevenue - a.monthlyRevenue)
+                          .map(member => (
+                            <tr key={member.userId} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                              <td style={{ padding: '0.75rem' }}>
+                                <div style={{ fontWeight: '500' }}>{member.userName}</div>
+                                <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                                  {member.userEmail}
+                                </div>
+                              </td>
+                              <td style={{ padding: '0.75rem', textAlign: 'center' }}>{member.totalClients}</td>
+                              <td style={{ padding: '0.75rem', textAlign: 'center' }}>{member.running}</td>
+                              <td style={{ padding: '0.75rem', textAlign: 'center' }}>{member.paidClients}</td>
+                              <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '500' }}>
+                                {formatPrice(member.monthlyRevenue)}
+                              </td>
+                              <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '500', color: 'var(--success)' }}>
+                                {formatPrice(member.netProfit)}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Leaderboard Mode */}
+          {viewMode === 'leaderboard' && (
             <div>
-              <h4 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>Team Members Breakdown</h4>
+              <h4 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>
+                🏆 Team Leaderboard - Top Performers
+              </h4>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                Rankings based on profit, client count, and active clients
+              </p>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--border-color)' }}>
+                      <th style={{ padding: '0.75rem', textAlign: 'center', width: '60px' }}>Rank</th>
                       <th style={{ padding: '0.75rem', textAlign: 'left' }}>Team Member</th>
                       <th style={{ padding: '0.75rem', textAlign: 'center' }}>Total Clients</th>
                       <th style={{ padding: '0.75rem', textAlign: 'center' }}>Running</th>
-                      <th style={{ padding: '0.75rem', textAlign: 'center' }}>Paid</th>
                       <th style={{ padding: '0.75rem', textAlign: 'right' }}>Revenue</th>
                       <th style={{ padding: '0.75rem', textAlign: 'right' }}>Profit</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'right' }}>Score</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {teamMembers
-                      .sort((a, b) => b.monthlyRevenue - a.monthlyRevenue)
-                      .map(member => (
-                        <tr key={member.userId} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    {leaderboard.map(member => {
+                      const medal = member.rank === 1 ? '🥇' : member.rank === 2 ? '🥈' : member.rank === 3 ? '🥉' : '';
+                      return (
+                        <tr 
+                          key={member.userId} 
+                          style={{ 
+                            borderBottom: '1px solid var(--border-color)',
+                            backgroundColor: member.rank <= 3 ? 'rgba(74, 222, 128, 0.05)' : 'transparent'
+                          }}
+                        >
+                          <td style={{ padding: '0.75rem', textAlign: 'center', fontWeight: 'bold', fontSize: '1.1rem' }}>
+                            {medal} {member.rank}
+                          </td>
                           <td style={{ padding: '0.75rem' }}>
                             <div style={{ fontWeight: '500' }}>{member.userName}</div>
                             <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
@@ -242,18 +444,107 @@ const TeamPerformanceModal = ({ clients, users, onClose }) => {
                           </td>
                           <td style={{ padding: '0.75rem', textAlign: 'center' }}>{member.totalClients}</td>
                           <td style={{ padding: '0.75rem', textAlign: 'center' }}>{member.running}</td>
-                          <td style={{ padding: '0.75rem', textAlign: 'center' }}>{member.paidClients}</td>
                           <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '500' }}>
                             {formatPrice(member.monthlyRevenue)}
                           </td>
                           <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '500', color: 'var(--success)' }}>
                             {formatPrice(member.netProfit)}
                           </td>
+                          <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: '600' }}>
+                            {member.score.toLocaleString()}
+                          </td>
                         </tr>
-                      ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* User Activity Mode */}
+          {viewMode === 'activity' && (
+            <div>
+              <h4 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>
+                📈 User Activity & Engagement
+              </h4>
+              <div style={{ display: 'grid', gap: '1.5rem' }}>
+                {Object.values(userActivity)
+                  .filter(act => act.clientsCreated > 0 || act.phaseChanges > 0)
+                  .sort((a, b) => (b.clientsCreated + b.phaseChanges) - (a.clientsCreated + a.phaseChanges))
+                  .map(activity => (
+                    <div 
+                      key={activity.userId} 
+                      style={{ 
+                        padding: '1.5rem', 
+                        background: 'var(--bg-secondary)', 
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-color)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '1rem' }}>
+                        <div>
+                          <h5 style={{ margin: 0, marginBottom: '0.25rem' }}>{activity.userName}</h5>
+                          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                            {activity.userEmail}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          {activity.lastActivity && (
+                            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                              Last Active: {new Date(activity.lastActivity).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                        <div>
+                          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                            Clients Created
+                          </div>
+                          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                            {activity.clientsCreated}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                            Phase Changes
+                          </div>
+                          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                            {activity.phaseChanges}
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                            Total Actions
+                          </div>
+                          <div style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>
+                            {activity.clientsCreated + activity.phaseChanges}
+                          </div>
+                        </div>
+                      </div>
+                      {activity.recentActions.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.5rem', fontWeight: '500' }}>
+                            Recent Activity:
+                          </div>
+                          <div style={{ fontSize: '0.875rem' }}>
+                            {activity.recentActions.slice(0, 5).map((action, idx) => (
+                              <div key={idx} style={{ marginBottom: '0.25rem', color: 'var(--text-secondary)' }}>
+                                • {action.action} - {new Date(action.timestamp).toLocaleString()}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+              {Object.values(userActivity).filter(act => act.clientsCreated > 0 || act.phaseChanges > 0).length === 0 && (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                  No user activity data available yet.
+                </div>
+              )}
             </div>
           )}
         </div>

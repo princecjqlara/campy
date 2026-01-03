@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import TagManagementModal from './TagManagementModal';
 
 const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, saveAIPrompts, getPackagePrices, savePackagePrices, onTeamPerformance }) => {
+  const [showTagManagement, setShowTagManagement] = useState(false);
   const [prices, setPrices] = useState({
     basic: 1799,
     star: 2999,
@@ -272,19 +274,29 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
           )}
         </div>
         <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {onTeamPerformance && (
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button 
               type="button" 
               className="btn btn-secondary" 
-              onClick={() => {
-                onClose();
-                onTeamPerformance();
-              }}
-              style={{ marginRight: 'auto' }}
+              onClick={() => setShowTagManagement(true)}
+              disabled={saving}
             >
-              👥 View Team Performance
+              🏷️ Manage Tags
             </button>
-          )}
+            {onTeamPerformance && (
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  onClose();
+                  onTeamPerformance();
+                }}
+                disabled={saving}
+              >
+                👥 View Team Performance
+              </button>
+            )}
+          </div>
           <div>
             <button type="button" className="btn btn-secondary" onClick={onClose} disabled={saving} style={{ marginRight: '0.5rem' }}>
               Cancel
@@ -295,6 +307,16 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
           </div>
         </div>
       </div>
+
+      {showTagManagement && (
+        <TagManagementModal
+          isOpen={showTagManagement}
+          onClose={() => setShowTagManagement(false)}
+          onTagsUpdated={() => {
+            // Tags updated, could trigger a refresh if needed
+          }}
+        />
+      )}
     </div>
   );
 };
