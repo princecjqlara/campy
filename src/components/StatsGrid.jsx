@@ -10,14 +10,14 @@ const StatsGrid = ({ metrics, role }) => {
         <div className="stat-label">Total Clients</div>
       </div>
       <div className="stat-card">
-        <div className="stat-icon">📧</div>
-        <div className="stat-value">{metrics.proposalSent}</div>
-        <div className="stat-label">Proposal Sent</div>
-      </div>
-      <div className="stat-card">
         <div className="stat-icon">📅</div>
         <div className="stat-value">{metrics.booked}</div>
         <div className="stat-label">Booked</div>
+      </div>
+      <div className="stat-card">
+        <div className="stat-icon">📞</div>
+        <div className="stat-value">{metrics.followUp}</div>
+        <div className="stat-label">Follow Up</div>
       </div>
       <div className="stat-card">
         <div className="stat-icon">⏳</div>

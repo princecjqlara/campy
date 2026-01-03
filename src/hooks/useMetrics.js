@@ -4,8 +4,8 @@ import { getPackagePrice } from '../utils/clients';
 export const useMetrics = (clients) => {
   const [metrics, setMetrics] = useState({
     totalClients: 0,
-    proposalSent: 0,
     booked: 0,
+    followUp: 0,
     preparing: 0,
     testing: 0,
     running: 0,
@@ -16,7 +16,7 @@ export const useMetrics = (clients) => {
 
   const updateMetrics = () => {
     const runningPaidClients = clients.filter(c => c.phase === 'running' && c.paymentStatus === 'paid');
-    
+
     const expenses = JSON.parse(localStorage.getItem('campy_expenses') || '{}');
     const revenue = runningPaidClients.reduce((total, client) => {
       return total + getPackagePrice(client);
@@ -30,8 +30,8 @@ export const useMetrics = (clients) => {
 
     setMetrics({
       totalClients: clients.length,
-      proposalSent: clients.filter(c => c.phase === 'proposal-sent').length,
       booked: clients.filter(c => c.phase === 'booked').length,
+      followUp: clients.filter(c => c.phase === 'follow-up').length,
       preparing: clients.filter(c => c.phase === 'preparing').length,
       testing: clients.filter(c => c.phase === 'testing').length,
       running: clients.filter(c => c.phase === 'running').length,
