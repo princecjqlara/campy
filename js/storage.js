@@ -74,12 +74,50 @@ const Storage = {
 
   // Add a new client
   addClient(client) {
+    if (!client) {
+      console.error('[DEBUG] addClient called with null/undefined client');
+      return null;
+    }
+    // #region agent log
+    try {
+      fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:76',message:'addClient entry',data:{hasId:!!client?.id,clientId:client?.id,clientName:client?.clientName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    } catch(e) {}
+    // #endregion
     const clients = this.getClients();
-    client.id = this.generateId();
-    client.createdAt = new Date().toISOString();
-    client.updatedAt = new Date().toISOString();
-    clients.push(client);
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:79',message:'before ID generation',data:{existingId:client.id,willGenerate:!client.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    if (!client.id) {
+      client.id = this.generateId();
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:82',message:'generated new ID',data:{newId:client.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    } else {
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:87',message:'preserved existing ID',data:{preservedId:client.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    }
+    // Check for duplicate (update if exists, add if new)
+    const existingIndex = clients.findIndex(c => c.id === client.id);
+    if (existingIndex !== -1) {
+      // Update existing client
+      clients[existingIndex] = { ...clients[existingIndex], ...client, updatedAt: new Date().toISOString() };
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:97',message:'updated existing client',data:{clientId:client.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    } else {
+      // Add new client
+      client.createdAt = client.createdAt || new Date().toISOString();
+      client.updatedAt = new Date().toISOString();
+      clients.push(client);
+      // #region agent log
+      fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:105',message:'added new client',data:{clientId:client.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+    }
     this.saveClients(clients);
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:94',message:'addClient exit',data:{finalId:client.id,totalClients:clients.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     this.logActivity('create', client);
     return client;
   },

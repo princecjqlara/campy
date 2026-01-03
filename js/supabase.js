@@ -37,11 +37,20 @@ const Supabase = {
 
         try {
             console.log('Syncing data from Supabase...');
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase.js:35',message:'syncAllData entry',data:{hasClient:!!this.client},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
 
             // 1. Sync Clients
             const clients = await this.getClients();
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase.js:42',message:'after getClients',data:{clientCount:clients.length,firstClientId:clients[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             // Convert to local format
             const localClients = clients.map(c => this.mapClientFromDb(c));
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase.js:45',message:'after mapClientFromDb',data:{mappedCount:localClients.length,firstMappedId:localClients[0]?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             localStorage.setItem(Storage.KEYS.CLIENTS, JSON.stringify(localClients));
 
             // 2. Sync Settings (Expenses & Prompts)

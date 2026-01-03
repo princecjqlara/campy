@@ -26,10 +26,21 @@ const Phases = {
 
     // Move client to next phase
     moveToNextPhase(clientId) {
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'phases.js:28',message:'moveToNextPhase entry',data:{clientId:clientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         const client = Storage.getClient(clientId);
-        if (!client) return null;
+        if (!client) {
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'phases.js:31',message:'client not found',data:{clientId:clientId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
+            return null;
+        }
 
         const nextPhase = this.getNextPhase(client.phase);
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'phases.js:34',message:'phase transition',data:{fromPhase:client.phase,toPhase:nextPhase,hasNextPhase:!!nextPhase},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         if (!nextPhase) {
             App.showToast('Client is already in the final phase', 'warning');
             return null;
@@ -56,7 +67,13 @@ const Phases = {
         }
 
         // Update client and log history
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'phases.js:59',message:'before updateClient',data:{clientId:clientId,updates:updates},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         const updatedClient = Storage.updateClient(clientId, updates);
+        // #region agent log
+        fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'phases.js:61',message:'after updateClient',data:{updatedClientId:updatedClient?.id,newPhase:updatedClient?.phase},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         Storage.addHistoryEntry(clientId, client.clientName, fromPhase, nextPhase, Storage.getCurrentUser());
         Priority.recalculateAll();
 

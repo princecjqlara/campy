@@ -16,12 +16,19 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Create admin account (password is set via Supabase Auth, not here)
+-- Create admin accounts (password is set via Supabase Auth, not here)
 -- You'll need to create the auth user in Supabase Dashboard -> Authentication
 -- Then insert the user record here with matching ID
-INSERT INTO users (email, name, role) VALUES
-  ('cjlara032107@gmail.com', 'Admin', 'admin')
-ON CONFLICT (email) DO UPDATE SET role = 'admin';
+-- Or use the create_admin_account.js script or admin_setup.html page
+
+-- Update existing users to admin role
+UPDATE users SET role = 'admin' WHERE email = 'cjlara032107@gmail.com';
+UPDATE users SET role = 'admin' WHERE email = 'aresmedia2026@gmail.com';
+
+-- Note: To create new admin accounts, use one of these methods:
+-- 1. Run create_admin_account.js script
+-- 2. Use admin_setup.html page
+-- 3. Create auth user in Supabase Dashboard, then insert here with matching UUID
 
 -- ============================================
 -- CLIENTS TABLE
@@ -47,7 +54,7 @@ CREATE TABLE IF NOT EXISTS clients (
   start_date DATE,
   
   -- Phase Management
-  phase TEXT DEFAULT 'preparing' CHECK (phase IN ('preparing', 'testing', 'running')),
+  phase TEXT DEFAULT 'proposal-sent' CHECK (phase IN ('proposal-sent', 'booked', 'preparing', 'testing', 'running')),
   priority INTEGER DEFAULT 0,
   auto_switch BOOLEAN DEFAULT false,
   auto_switch_days INTEGER DEFAULT 7,

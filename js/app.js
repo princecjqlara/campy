@@ -8,8 +8,28 @@ const App = {
 
     // Initialize the application
     async init() {
-        this.initTheme();
-        this.bindEvents();
+        // #region agent log
+        console.log('[DEBUG] App.init() called');
+        fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:10',message:'App.init entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        try {
+            this.initTheme();
+            // #region agent log
+            console.log('[DEBUG] Theme initialized');
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:15',message:'after initTheme',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+            this.bindEvents();
+            // #region agent log
+            console.log('[DEBUG] Events bound');
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:19',message:'after bindEvents',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+        } catch (error) {
+            // #region agent log
+            console.error('[DEBUG] Error in init:', error);
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:23',message:'init error',data:{error:error.message,stack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
+            throw error;
+        }
 
         // Try to initialize Supabase
         const supabaseAvailable = Supabase.init();
@@ -36,6 +56,9 @@ const App = {
             // Fallback to localStorage mode
             this.isOnlineMode = false;
             this.initRole();
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:37',message:'offline mode init',data:{role:Storage.getRole(),roleAttr:document.documentElement.dataset.role},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+            // #endregion
             this.refreshUI();
             Phases.processAutoSwitches();
             console.log('Campy initialized (offline mode)');
@@ -44,7 +67,14 @@ const App = {
 
     // Show login modal
     showLoginModal() {
-        document.getElementById('loginModal')?.classList.add('active');
+        const loginModal = document.getElementById('loginModal');
+        if (loginModal) {
+            loginModal.classList.add('active');
+            // #region agent log
+            console.log('[DEBUG] Login modal shown');
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:47',message:'loginModal shown',data:{hasActive:loginModal.classList.contains('active')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'G'})}).catch(()=>{});
+            // #endregion
+        }
     },
 
     // Hide login modal
@@ -184,6 +214,10 @@ const App = {
 
     // Bind all event listeners
     bindEvents() {
+        // #region agent log
+        console.log('[DEBUG] bindEvents() called');
+        fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:186',message:'bindEvents entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         // Login form
         document.getElementById('loginForm')?.addEventListener('submit', (e) => {
             e.preventDefault();
@@ -226,7 +260,25 @@ const App = {
         });
 
         // Add client button
-        document.getElementById('addClientBtn')?.addEventListener('click', () => this.openAddModal());
+        const addClientBtn = document.getElementById('addClientBtn');
+        if (addClientBtn) {
+            addClientBtn.addEventListener('click', (e) => {
+                // #region agent log
+                console.log('[DEBUG] addClientBtn clicked');
+                fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:232',message:'addClientBtn click',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                // #endregion
+                try {
+                    this.openAddModal();
+                } catch (error) {
+                    console.error('[DEBUG] Error in openAddModal:', error);
+                    // #region agent log
+                    fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:238',message:'openAddModal error',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                    // #endregion
+                }
+            });
+        } else {
+            console.error('[DEBUG] addClientBtn not found!');
+        }
 
         // Modal controls
         document.getElementById('closeModal')?.addEventListener('click', () => this.closeModal());
@@ -285,6 +337,11 @@ const App = {
 
         // AI Strategy generation
         document.getElementById('generateStrategyBtn')?.addEventListener('click', () => this.generateStrategy());
+        
+        // #region agent log
+        console.log('[DEBUG] All event listeners bound');
+        fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:290',message:'bindEvents complete',data:{addClientBtn:!!document.getElementById('addClientBtn'),saveBtn:!!document.getElementById('saveBtn')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
     },
 
     // Switch role
@@ -461,14 +518,43 @@ const App = {
 
     // Open add client modal
     openAddModal() {
-        this.currentClientId = null;
-        document.getElementById('modalTitle').textContent = 'Add New Client';
-        document.getElementById('deleteBtn')?.classList.add('hidden');
-        document.getElementById('clientForm').reset();
-        this.selectPackage('basic');
-        this.switchTab('basic');
-        this.toggleTestingOptions(false);
-        document.getElementById('clientModal').classList.add('active');
+        // #region agent log
+        console.log('[DEBUG] openAddModal() called');
+        fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:513',message:'openAddModal entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+        // #endregion
+        try {
+            this.currentClientId = null;
+            const modalTitle = document.getElementById('modalTitle');
+            const deleteBtn = document.getElementById('deleteBtn');
+            const clientForm = document.getElementById('clientForm');
+            const clientModal = document.getElementById('clientModal');
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:523',message:'elements found',data:{modalTitle:!!modalTitle,deleteBtn:!!deleteBtn,clientForm:!!clientForm,clientModal:!!clientModal},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
+            
+            if (modalTitle) modalTitle.textContent = 'Add New Client';
+            if (deleteBtn) deleteBtn.classList.add('hidden');
+            if (clientForm) clientForm.reset();
+            this.selectPackage('basic');
+            this.switchTab('basic');
+            this.toggleTestingOptions(false);
+            if (clientModal) {
+                clientModal.classList.add('active');
+                // #region agent log
+                console.log('[DEBUG] Modal should be visible now');
+                fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:536',message:'modal activated',data:{hasActiveClass:clientModal.classList.contains('active')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                // #endregion
+            } else {
+                console.error('[DEBUG] clientModal element not found!');
+            }
+        } catch (error) {
+            console.error('[DEBUG] Error in openAddModal:', error);
+            // #region agent log
+            fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:544',message:'openAddModal exception',data:{error:error.message,stack:error.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
+            throw error;
+        }
     },
 
     // Open edit client modal
@@ -630,16 +716,37 @@ const App = {
                 this.showToast('Client updated successfully', 'success');
             } else {
                 // CREATE NEW
+                // #region agent log
+                fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:632',message:'creating new client',data:{isOnlineMode:this.isOnlineMode,phase:phase},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 // First create local object to get logic (like priority)
                 data.priority = Priority.getNewClientPriority(phase);
                 let newClient = Clients.createClient(data); // generates temp ID
+                // #region agent log
+                fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:636',message:'after createClient',data:{tempId:newClient.id,hasId:!!newClient.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
 
                 if (this.isOnlineMode) {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:639',message:'before Supabase.addClient',data:{tempId:newClient.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                    // #endregion
                     const created = await Supabase.addClient(newClient); // Supabase will ignore temp ID and generate UUID
+                    // #region agent log
+                    fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:641',message:'after Supabase.addClient',data:{supabaseId:created?.id,hasId:!!created?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                    // #endregion
                     newClient = Supabase.mapClientFromDb(created); // Get back real UUID
+                    // #region agent log
+                    fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:643',message:'after mapClientFromDb',data:{mappedId:newClient.id,hasId:!!newClient.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                    // #endregion
                 }
 
+                // #region agent log
+                fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:647',message:'before Storage.addClient',data:{clientId:newClient.id,hasId:!!newClient.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 Storage.addClient(newClient);
+                // #region agent log
+                fetch('http://127.0.0.1:7244/ingest/ba30085e-3ebc-4936-81b7-428dd068dfa1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app.js:649',message:'after Storage.addClient',data:{clientId:newClient.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 this.showToast('Client added successfully', 'success');
             }
 
@@ -707,4 +814,12 @@ const App = {
 };
 
 // Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', () => App.init());
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('[DEBUG] DOMContentLoaded fired');
+    try {
+        App.init();
+    } catch (error) {
+        console.error('[DEBUG] Fatal error in App.init():', error);
+        alert('Application failed to initialize. Check console for details.');
+    }
+});

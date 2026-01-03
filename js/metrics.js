@@ -14,7 +14,6 @@ const Metrics = {
 
         return {
             totalClients: clients.length,
-            totalClients: clients.length,
             booked: clients.filter(c => c.phase === 'booked').length,
             preparing: clients.filter(c => c.phase === 'preparing').length,
             testing: clients.filter(c => c.phase === 'testing').length,
