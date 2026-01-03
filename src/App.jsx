@@ -76,6 +76,9 @@ function App() {
           // Already logged in - sync data from Supabase
           setShowLoginModal(false);
           await syncAllData();
+          // Load all users for calendar attendees
+          const users = await getAllUsers();
+          if (users) setAllUsers(users);
           // Role will be set by the useEffect that watches currentUserProfile
         } else {
           setShowLoginModal(true);
@@ -414,6 +417,7 @@ function App() {
           isOpen={showCalendar}
           onClose={() => setShowCalendar(false)}
           currentUserId={currentUser?.id}
+          users={allUsers}
         />
       )}
 
