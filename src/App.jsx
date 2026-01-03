@@ -292,186 +292,195 @@ function App() {
     }
   };
 
+  // Only show main app UI when logged in
+  const isLoggedIn = !!currentUser;
+
   return (
     <div className="app-container">
-      <Header
-        role={role}
-        currentUserName={currentUserName}
-        onUserNameChange={setCurrentUserName}
-        onRoleChange={handleSwitchRole}
-        onThemeToggle={handleToggleTheme}
-        onAddClient={handleOpenAddModal}
-        onAdminSettings={() => setShowAdminSettings(true)}
-        onNotifications={() => setShowNotifications(true)}
-        onReports={() => setShowReports(true)}
-        onCalendar={() => setShowCalendar(true)}
-        onTeamPerformance={() => setShowTeamPerformance(true)}
-        onLogout={handleLogout}
-        isOnlineMode={isOnlineMode}
-        currentUserEmail={currentUser?.email}
-        unreadNotificationCount={unreadNotificationCount}
-      />
+      {/* Show management UI only when logged in */}
+      {isLoggedIn && (
+        <>
+          <Header
+            role={role}
+            currentUserName={currentUserName}
+            onUserNameChange={setCurrentUserName}
+            onRoleChange={handleSwitchRole}
+            onThemeToggle={handleToggleTheme}
+            onAddClient={handleOpenAddModal}
+            onAdminSettings={() => setShowAdminSettings(true)}
+            onNotifications={() => setShowNotifications(true)}
+            onReports={() => setShowReports(true)}
+            onCalendar={() => setShowCalendar(true)}
+            onTeamPerformance={() => setShowTeamPerformance(true)}
+            onLogout={handleLogout}
+            isOnlineMode={isOnlineMode}
+            currentUserEmail={currentUser?.email}
+            unreadNotificationCount={unreadNotificationCount}
+          />
 
-      <StatsGrid metrics={metrics} role={role} />
+          <StatsGrid metrics={metrics} role={role} />
 
-      <FiltersBar
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        filterPhase={filterPhase}
-        onPhaseFilterChange={setFilterPhase}
-        filterPackage={filterPackage}
-        onPackageFilterChange={setFilterPackage}
-        filterPayment={filterPayment}
-        onPaymentFilterChange={setFilterPayment}
-        viewMode={viewMode}
-        onViewModeChange={(mode) => {
-          setViewMode(mode);
-          const settings = JSON.parse(localStorage.getItem('campy_settings') || '{}');
-          localStorage.setItem('campy_settings', JSON.stringify({ ...settings, viewMode: mode }));
-        }}
-      />
+          <FiltersBar
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            filterPhase={filterPhase}
+            onPhaseFilterChange={setFilterPhase}
+            filterPackage={filterPackage}
+            onPackageFilterChange={setFilterPackage}
+            filterPayment={filterPayment}
+            onPaymentFilterChange={setFilterPayment}
+            viewMode={viewMode}
+            onViewModeChange={(mode) => {
+              setViewMode(mode);
+              const settings = JSON.parse(localStorage.getItem('campy_settings') || '{}');
+              localStorage.setItem('campy_settings', JSON.stringify({ ...settings, viewMode: mode }));
+            }}
+          />
 
-      <PhasesContainer
-        clients={clients}
-        filters={{ searchTerm, filterPhase, filterPackage, filterPayment }}
-        viewMode={viewMode}
-        onViewClient={handleOpenViewModal}
-        onEditClient={handleOpenEditModal}
-        onMoveClient={async (clientId, targetPhase) => {
-          try {
-            await moveClientToPhase(clientId, targetPhase);
-          } catch (error) {
-            console.error('Error moving client to phase:', error);
-          }
-        }}
-      />
+          <PhasesContainer
+            clients={clients}
+            filters={{ searchTerm, filterPhase, filterPackage, filterPayment }}
+            viewMode={viewMode}
+            onViewClient={handleOpenViewModal}
+            onEditClient={handleOpenEditModal}
+            onMoveClient={async (clientId, targetPhase) => {
+              try {
+                await moveClientToPhase(clientId, targetPhase);
+              } catch (error) {
+                console.error('Error moving client to phase:', error);
+              }
+            }}
+          />
 
-      {showClientModal && (
-        <ClientModal
-          clientId={currentClientId}
-          client={currentClientId ? getClient(currentClientId) : null}
-          onClose={() => {
-            setShowClientModal(false);
-            setCurrentClientId(null);
-          }}
-          onSave={handleSaveClient}
-          onDelete={async (id) => {
-            // Delete from Supabase first if online
-            if (isOnlineMode) {
-              await deleteClientFromSupabase(id);
-            }
-            // Then delete from local storage
-            await deleteClient(id);
-            setShowClientModal(false);
-            setCurrentClientId(null);
-          }}
-        />
+          {showClientModal && (
+            <ClientModal
+              clientId={currentClientId}
+              client={currentClientId ? getClient(currentClientId) : null}
+              onClose={() => {
+                setShowClientModal(false);
+                setCurrentClientId(null);
+              }}
+              onSave={handleSaveClient}
+              onDelete={async (id) => {
+                // Delete from Supabase first if online
+                if (isOnlineMode) {
+                  await deleteClientFromSupabase(id);
+                }
+                // Then delete from local storage
+                await deleteClient(id);
+                setShowClientModal(false);
+                setCurrentClientId(null);
+              }}
+            />
+          )}
+
+          {showViewModal && (
+            <ViewClientModal
+              client={getClient(currentClientId)}
+              onClose={() => {
+                setShowViewModal(false);
+                setCurrentClientId(null);
+              }}
+              onEdit={() => {
+                setShowViewModal(false);
+                handleOpenEditModal(currentClientId);
+              }}
+              onViewCommunication={() => {
+                setShowCommunicationLog(true);
+              }}
+            />
+          )}
+
+          {showAdminSettings && (
+            <AdminSettingsModal
+              onClose={() => setShowAdminSettings(false)}
+              getExpenses={getExpenses}
+              saveExpenses={saveExpenses}
+              getAIPrompts={getAIPrompts}
+              saveAIPrompts={saveAIPrompts}
+              getPackagePrices={getPackagePrices}
+              savePackagePrices={savePackagePrices}
+              getPackageDetails={getPackageDetails}
+              savePackageDetails={savePackageDetails}
+              onTeamPerformance={() => {
+                setShowAdminSettings(false);
+                setShowTeamPerformance(true);
+              }}
+            />
+          )}
+
+          {showTeamPerformance && (
+            <TeamPerformanceModal
+              clients={clients}
+              users={allUsers}
+              onClose={() => setShowTeamPerformance(false)}
+            />
+          )}
+
+          {showNotifications && (
+            <NotificationsPanel
+              isOpen={showNotifications}
+              onClose={() => setShowNotifications(false)}
+              currentUserId={currentUser?.id}
+            />
+          )}
+
+          {showCommunicationLog && (
+            <CommunicationLog
+              clientId={currentClientId}
+              isOpen={showCommunicationLog}
+              onClose={() => {
+                setShowCommunicationLog(false);
+                setCurrentClientId(null);
+              }}
+              currentUserId={currentUser?.id}
+            />
+          )}
+
+          {showReports && (
+            <ReportsDashboard
+              clients={clients}
+              users={allUsers}
+              isOpen={showReports}
+              onClose={() => setShowReports(false)}
+            />
+          )}
+
+          {showCalendar && (
+            <CalendarView
+              clients={clients}
+              isOpen={showCalendar}
+              onClose={() => setShowCalendar(false)}
+              currentUserId={currentUser?.id}
+              currentUserName={currentUserProfile?.name || userName}
+              users={allUsers}
+              onStartVideoCall={(meeting) => {
+                // Get room slug from meeting or room
+                const slug = meeting.room_slug;
+                if (slug) {
+                  setMeetingRoomSlug(slug);
+                  setShowMeetingRoom(true);
+                  setShowCalendar(false);
+                  window.history.pushState({}, '', `/room/${slug}`);
+                }
+              }}
+            />
+          )}
+
+          {showHistoryModal && (
+            <HistoryModal
+              clientId={currentClientId}
+              onClose={() => {
+                setShowHistoryModal(false);
+                setCurrentClientId(null);
+              }}
+            />
+          )}
+        </>
       )}
 
-      {showViewModal && (
-        <ViewClientModal
-          client={getClient(currentClientId)}
-          onClose={() => {
-            setShowViewModal(false);
-            setCurrentClientId(null);
-          }}
-          onEdit={() => {
-            setShowViewModal(false);
-            handleOpenEditModal(currentClientId);
-          }}
-          onViewCommunication={() => {
-            setShowCommunicationLog(true);
-          }}
-        />
-      )}
-
-      {showAdminSettings && (
-        <AdminSettingsModal
-          onClose={() => setShowAdminSettings(false)}
-          getExpenses={getExpenses}
-          saveExpenses={saveExpenses}
-          getAIPrompts={getAIPrompts}
-          saveAIPrompts={saveAIPrompts}
-          getPackagePrices={getPackagePrices}
-          savePackagePrices={savePackagePrices}
-          getPackageDetails={getPackageDetails}
-          savePackageDetails={savePackageDetails}
-          onTeamPerformance={() => {
-            setShowAdminSettings(false);
-            setShowTeamPerformance(true);
-          }}
-        />
-      )}
-
-      {showTeamPerformance && (
-        <TeamPerformanceModal
-          clients={clients}
-          users={allUsers}
-          onClose={() => setShowTeamPerformance(false)}
-        />
-      )}
-
-      {showNotifications && (
-        <NotificationsPanel
-          isOpen={showNotifications}
-          onClose={() => setShowNotifications(false)}
-          currentUserId={currentUser?.id}
-        />
-      )}
-
-      {showCommunicationLog && (
-        <CommunicationLog
-          clientId={currentClientId}
-          isOpen={showCommunicationLog}
-          onClose={() => {
-            setShowCommunicationLog(false);
-            setCurrentClientId(null);
-          }}
-          currentUserId={currentUser?.id}
-        />
-      )}
-
-      {showReports && (
-        <ReportsDashboard
-          clients={clients}
-          users={allUsers}
-          isOpen={showReports}
-          onClose={() => setShowReports(false)}
-        />
-      )}
-
-      {showCalendar && (
-        <CalendarView
-          clients={clients}
-          isOpen={showCalendar}
-          onClose={() => setShowCalendar(false)}
-          currentUserId={currentUser?.id}
-          currentUserName={currentUserProfile?.name || userName}
-          users={allUsers}
-          onStartVideoCall={(meeting) => {
-            // Get room slug from meeting or room
-            const slug = meeting.room_slug;
-            if (slug) {
-              setMeetingRoomSlug(slug);
-              setShowMeetingRoom(true);
-              setShowCalendar(false);
-              window.history.pushState({}, '', `/room/${slug}`);
-            }
-          }}
-        />
-      )}
-
-      {showHistoryModal && (
-        <HistoryModal
-          clientId={currentClientId}
-          onClose={() => {
-            setShowHistoryModal(false);
-            setCurrentClientId(null);
-          }}
-        />
-      )}
-
-      {showLandingPage && !currentUser && !showMeetingRoom && (
+      {/* Landing page - shown when not logged in */}
+      {!isLoggedIn && !showMeetingRoom && (
         <LandingPage
           onLogin={() => {
             setIsSignUpMode(false);
@@ -484,6 +493,7 @@ function App() {
         />
       )}
 
+      {/* Login modal - can show on top of landing page */}
       {showLoginModal && (
         <LoginModal
           onLogin={async (email, password) => {
@@ -499,6 +509,7 @@ function App() {
         />
       )}
 
+      {/* Meeting room - can show for anyone */}
       {showMeetingRoom && meetingRoomSlug && (
         <MeetingRoom
           roomSlug={meetingRoomSlug}
@@ -522,4 +533,5 @@ function App() {
 }
 
 export default App;
+
 
