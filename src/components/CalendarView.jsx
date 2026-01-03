@@ -363,7 +363,41 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, onStartVide
   const [newStartTime, setNewStartTime] = useState('');
   const [newEndTime, setNewEndTime] = useState('');
   const [creatingRoom, setCreatingRoom] = useState(false);
-  const [roomLink, setRoomLink] = useState(meeting.room_slug ? `${window.location.origin}/room/${meeting.room_slug}` : null);
+  const [roomLink, setRoomLink] = useState(null);
+  const [roomSlug, setRoomSlug] = useState(null);
+  const [loadingRoom, setLoadingRoom] = useState(true);
+
+  // Load room link from database on mount
+  useEffect(() => {
+    const loadRoomLink = async () => {
+      try {
+        const client = (await import('../services/supabase')).getSupabaseClient();
+        if (!client) {
+          setLoadingRoom(false);
+          return;
+        }
+
+        // Check if there's a room for this calendar event
+        const { data } = await client
+          .from('meeting_rooms')
+          .select('room_slug')
+          .eq('calendar_event_id', meeting.id)
+          .single();
+
+        if (data?.room_slug) {
+          setRoomSlug(data.room_slug);
+          setRoomLink(`${window.location.origin}/room/${data.room_slug}`);
+        }
+      } catch (e) {
+        // No room exists yet, that's okay
+        console.log('No room for this event yet');
+      } finally {
+        setLoadingRoom(false);
+      }
+    };
+
+    loadRoomLink();
+  }, [meeting.id]);
 
   const statusOptions = [
     { key: 'scheduled', label: 'Scheduled', color: '#3b82f6' },
@@ -447,10 +481,12 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, onStartVide
             <div style={{ fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.75rem', color: '#3b82f6' }}>
               🎥 Video Call
             </div>
-            {roomLink ? (
+            {loadingRoom ? (
+              <div style={{ textAlign: 'center', padding: '0.5rem', color: 'var(--text-muted)' }}>Loading...</div>
+            ) : roomLink ? (
               <div>
                 <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <button className="btn btn-primary" onClick={() => onStartVideoCall?.(meeting)} style={{ flex: 1 }}>
+                  <button className="btn btn-primary" onClick={() => onStartVideoCall?.({ ...meeting, room_slug: roomSlug })} style={{ flex: 1 }}>
                     ▶️ Join Call
                   </button>
                   <button className="btn btn-secondary" onClick={copyRoomLink}>

@@ -16,6 +16,52 @@ const createThrottle = (ms) => {
     };
 };
 
+// Guest name entry modal
+const GuestNameModal = ({ onSubmit }) => {
+    const [name, setName] = useState('');
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        if (name.trim()) {
+            onSubmit(name.trim());
+        }
+    };
+
+    return (
+        <div className="modal-overlay active" style={{ zIndex: 1100 }}>
+            <div className="modal" style={{ maxWidth: '400px', margin: 'auto' }}>
+                <div className="modal-header">
+                    <h3>Join Meeting</h3>
+                </div>
+                <form onSubmit={handleSubmit}>
+                    <div className="modal-body">
+                        <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>
+                            Enter your name to join the meeting
+                        </p>
+                        <div className="form-group">
+                            <label className="form-label">Your Name</label>
+                            <input
+                                type="text"
+                                className="form-input"
+                                value={name}
+                                onChange={e => setName(e.target.value)}
+                                placeholder="Enter your name..."
+                                autoFocus
+                                required
+                            />
+                        </div>
+                    </div>
+                    <div className="modal-footer">
+                        <button type="submit" className="btn btn-primary" disabled={!name.trim()}>
+                            Join Meeting
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 const MeetingRoom = ({
     roomSlug,
     roomId,
@@ -28,31 +74,48 @@ const MeetingRoom = ({
     const [error, setError] = useState(null);
     const [participants, setParticipants] = useState([]);
     const [transcripts, setTranscripts] = useState([]);
-    const [liveTexts, setLiveTexts] = useState({}); // { odId: "text..." }
+    const [liveTexts, setLiveTexts] = useState({});
     const [captionsEnabled, setCaptionsEnabled] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOff, setIsVideoOff] = useState(false);
     const [showCaptions, setShowCaptions] = useState(true);
+    const [guestName, setGuestName] = useState(null);
+    const [needsGuestName, setNeedsGuestName] = useState(false);
+    const [myParticipantId, setMyParticipantId] = useState(null);
 
     const localVideoRef = useRef(null);
     const localStreamRef = useRef(null);
     const throttleInterimRef = useRef(createThrottle(800));
     const supabaseChannelRef = useRef(null);
 
-    const displayName = currentUser?.name || currentUser?.email?.split('@')[0] || 'Guest';
-    const userId = currentUser?.id;
+    // Determine display name
+    const isGuest = !currentUser?.id;
+    const displayName = isGuest ? guestName : (currentUser?.name || currentUser?.email?.split('@')[0] || 'User');
+    const odId = currentUser?.id || `guest_${Date.now()}`;
+
+    // Check if guest needs to enter name
+    useEffect(() => {
+        if (isGuest && !guestName) {
+            setNeedsGuestName(true);
+        }
+    }, [isGuest, guestName]);
 
     // Load room data
     useEffect(() => {
+        if (needsGuestName) return; // Wait for guest name
         loadRoom();
         return () => {
             cleanup();
         };
-    }, [roomSlug, roomId]);
+    }, [roomSlug, roomId, needsGuestName]);
 
     const loadRoom = async () => {
         const client = getSupabaseClient();
-        if (!client) return;
+        if (!client) {
+            setError('Database connection not available');
+            setLoading(false);
+            return;
+        }
 
         try {
             setLoading(true);
@@ -90,13 +153,27 @@ const MeetingRoom = ({
         const client = getSupabaseClient();
         if (!client) return;
 
+        // First, mark any old entries from this user as inactive (fix duplicate issue)
+        if (currentUser?.id) {
+            await client.from('room_participants')
+                .update({ is_active: false, left_at: new Date().toISOString() })
+                .eq('room_id', roomId)
+                .eq('user_id', currentUser.id)
+                .eq('is_active', true);
+        }
+
         // Add self to participants
-        await client.from('room_participants').insert({
+        const { data } = await client.from('room_participants').insert({
             room_id: roomId,
-            user_id: userId,
+            user_id: currentUser?.id || null,
             display_name: displayName,
+            peer_id: odId,
             is_active: true
-        });
+        }).select().single();
+
+        if (data) {
+            setMyParticipantId(data.id);
+        }
 
         // Update room status to active if scheduled
         await client.from('meeting_rooms')
@@ -109,23 +186,19 @@ const MeetingRoom = ({
         const client = getSupabaseClient();
         if (!client) return;
 
-        // Subscribe to transcript events
         const channel = client.channel(`room:${roomId}`)
             .on('postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'transcript_events', filter: `room_id=eq.${roomId}` },
                 (payload) => {
                     const event = payload.new;
                     if (event.is_final) {
-                        // Add to final transcripts
                         setTranscripts(prev => [...prev, event]);
-                        // Clear live text for this user
                         setLiveTexts(prev => {
                             const next = { ...prev };
                             delete next[event.user_id];
                             return next;
                         });
                     } else {
-                        // Update live text
                         setLiveTexts(prev => ({
                             ...prev,
                             [event.user_id]: { text: event.text, name: event.display_name }
@@ -135,7 +208,7 @@ const MeetingRoom = ({
             )
             .on('postgres_changes',
                 { event: '*', schema: 'public', table: 'room_participants', filter: `room_id=eq.${roomId}` },
-                (payload) => {
+                () => {
                     loadParticipants(roomId);
                 }
             )
@@ -153,7 +226,8 @@ const MeetingRoom = ({
             .from('room_participants')
             .select('*')
             .eq('room_id', roomId)
-            .eq('is_active', true);
+            .eq('is_active', true)
+            .order('joined_at', { ascending: true });
 
         setParticipants(data || []);
     };
@@ -179,14 +253,13 @@ const MeetingRoom = ({
             localStreamRef.current.getTracks().forEach(track => track.stop());
         }
 
-        // Leave room
-        if (room?.id && userId) {
+        // Leave room - mark my participant as inactive
+        if (myParticipantId) {
             const client = getSupabaseClient();
             if (client) {
                 await client.from('room_participants')
                     .update({ is_active: false, left_at: new Date().toISOString() })
-                    .eq('room_id', room.id)
-                    .eq('user_id', userId);
+                    .eq('id', myParticipantId);
             }
         }
 
@@ -199,7 +272,6 @@ const MeetingRoom = ({
     // Start local video (camera is optional)
     const startLocalVideo = async () => {
         try {
-            // Try to get both video and audio
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: true,
                 audio: true
@@ -210,17 +282,15 @@ const MeetingRoom = ({
             }
         } catch (e) {
             console.warn('Failed to get video, trying audio only:', e);
-            // Try audio only if video fails
             try {
                 const audioStream = await navigator.mediaDevices.getUserMedia({
                     video: false,
                     audio: true
                 });
                 localStreamRef.current = audioStream;
-                setIsVideoOff(true); // Mark video as off
+                setIsVideoOff(true);
             } catch (audioError) {
                 console.warn('No media devices available:', audioError);
-                // Allow user to join without any media - just captions/presence
                 setIsVideoOff(true);
                 setIsMuted(true);
             }
@@ -228,17 +298,16 @@ const MeetingRoom = ({
     };
 
     useEffect(() => {
-        if (room && !loading) {
+        if (room && !loading && !needsGuestName) {
             startLocalVideo();
         }
-    }, [room, loading]);
+    }, [room, loading, needsGuestName]);
 
     // Toggle mute
     const toggleMute = () => {
         if (localStreamRef.current) {
             const audioTrack = localStreamRef.current.getAudioTracks()[0];
             if (audioTrack) {
-                // Fix: toggle to the opposite of current muted state
                 audioTrack.enabled = !audioTrack.enabled;
                 setIsMuted(!audioTrack.enabled);
             }
@@ -252,11 +321,9 @@ const MeetingRoom = ({
         if (localStreamRef.current) {
             const videoTrack = localStreamRef.current.getVideoTracks()[0];
             if (videoTrack) {
-                // Fix: toggle to the opposite of current state
                 videoTrack.enabled = !videoTrack.enabled;
                 setIsVideoOff(!videoTrack.enabled);
             } else {
-                // No video track available
                 setIsVideoOff(true);
             }
         } else {
@@ -274,12 +341,12 @@ const MeetingRoom = ({
 
         await client.from('transcript_events').insert({
             room_id: room.id,
-            user_id: userId,
+            user_id: currentUser?.id || null,
             display_name: displayName,
             text,
             is_final: false
         });
-    }, [room?.id, userId, displayName]);
+    }, [room?.id, currentUser?.id, displayName]);
 
     const handleFinalSpeech = useCallback(async (text) => {
         if (!room?.id) return;
@@ -289,12 +356,12 @@ const MeetingRoom = ({
 
         await client.from('transcript_events').insert({
             room_id: room.id,
-            user_id: userId,
+            user_id: currentUser?.id || null,
             display_name: displayName,
             text,
             is_final: true
         });
-    }, [room?.id, userId, displayName]);
+    }, [room?.id, currentUser?.id, displayName]);
 
     const { isSupported, isListening, error: speechError, interim } = useSpeechCaptions({
         enabled: captionsEnabled,
@@ -315,6 +382,17 @@ const MeetingRoom = ({
         navigator.clipboard.writeText(link);
         alert('Room link copied!');
     };
+
+    // Handle guest name submit
+    const handleGuestNameSubmit = (name) => {
+        setGuestName(name);
+        setNeedsGuestName(false);
+    };
+
+    // Show guest name modal
+    if (needsGuestName) {
+        return <GuestNameModal onSubmit={handleGuestNameSubmit} />;
+    }
 
     if (loading) {
         return (
@@ -337,15 +415,42 @@ const MeetingRoom = ({
         );
     }
 
+    // Get status color
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'active': return '#22c55e';
+            case 'scheduled': return '#3b82f6';
+            case 'ended': return '#6b7280';
+            default: return '#6b7280';
+        }
+    };
+
+    // Check if participant is me
+    const isMe = (p) => p.id === myParticipantId;
+
     return (
         <div className="modal-overlay active" style={{ background: 'rgba(0,0,0,0.95)' }}>
             <div style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column' }}>
                 {/* Header */}
                 <div style={{ padding: '1rem', background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)' }}>
                     <div>
-                        <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{room?.title}</h2>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            {participants.length} participant{participants.length !== 1 ? 's' : ''}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{room?.title}</h2>
+                            <span style={{
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '12px',
+                                fontSize: '0.7rem',
+                                background: getStatusColor(room?.status),
+                                color: 'white',
+                                textTransform: 'uppercase',
+                                fontWeight: '600'
+                            }}>
+                                {room?.status === 'active' ? '● LIVE' : room?.status}
+                            </span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                            {participants.length} participant{participants.length !== 1 ? 's' : ''} • Joined as <strong>{displayName}</strong>
+                            {isGuest && <span style={{ color: 'var(--warning)' }}> (Guest)</span>}
                         </div>
                     </div>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -363,32 +468,37 @@ const MeetingRoom = ({
                     {/* Video area */}
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '1rem' }}>
                         {/* Video grid */}
-                        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', alignContent: 'center' }}>
-                            {/* Local video */}
-                            <div style={{ position: 'relative', background: 'var(--bg-tertiary)', borderRadius: '12px', overflow: 'hidden', aspectRatio: '16/9' }}>
+                        <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', alignContent: 'start', overflow: 'auto' }}>
+                            {/* Local video - always show first */}
+                            <div style={{ position: 'relative', background: 'var(--bg-tertiary)', borderRadius: '12px', overflow: 'hidden', aspectRatio: '16/9', border: '2px solid var(--primary)' }}>
                                 <video
                                     ref={localVideoRef}
                                     autoPlay
                                     muted
                                     playsInline
-                                    style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', display: isVideoOff ? 'none' : 'block' }}
                                 />
                                 {isVideoOff && (
                                     <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-tertiary)' }}>
-                                        <div style={{ fontSize: '3rem' }}>📷</div>
+                                        <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem' }}>
+                                            {displayName.charAt(0).toUpperCase()}
+                                        </div>
                                     </div>
                                 )}
-                                <div style={{ position: 'absolute', bottom: '0.5rem', left: '0.5rem', background: 'rgba(0,0,0,0.7)', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
+                                <div style={{ position: 'absolute', bottom: '0.5rem', left: '0.5rem', background: 'rgba(0,0,0,0.7)', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ color: 'var(--primary)' }}>●</span>
                                     {displayName} (You) {isMuted && '🔇'}
                                 </div>
                             </div>
 
-                            {/* Other participants would go here */}
-                            {participants.filter(p => p.user_id !== userId).map(p => (
+                            {/* Other participants */}
+                            {participants.filter(p => !isMe(p)).map(p => (
                                 <div key={p.id} style={{ position: 'relative', background: 'var(--bg-tertiary)', borderRadius: '12px', overflow: 'hidden', aspectRatio: '16/9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <div style={{ fontSize: '3rem' }}>👤</div>
+                                    <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2rem', color: 'white' }}>
+                                        {(p.display_name || 'U').charAt(0).toUpperCase()}
+                                    </div>
                                     <div style={{ position: 'absolute', bottom: '0.5rem', left: '0.5rem', background: 'rgba(0,0,0,0.7)', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem' }}>
-                                        {p.display_name} {p.is_muted && '🔇'}
+                                        {p.display_name || 'User'} {p.is_muted && '🔇'}
                                     </div>
                                 </div>
                             ))}
@@ -400,6 +510,7 @@ const MeetingRoom = ({
                                 className={`btn ${isMuted ? 'btn-danger' : 'btn-secondary'}`}
                                 onClick={toggleMute}
                                 style={{ padding: '1rem', borderRadius: '50%', width: '60px', height: '60px' }}
+                                title={isMuted ? 'Unmute' : 'Mute'}
                             >
                                 {isMuted ? '🔇' : '🎤'}
                             </button>
@@ -407,6 +518,7 @@ const MeetingRoom = ({
                                 className={`btn ${isVideoOff ? 'btn-danger' : 'btn-secondary'}`}
                                 onClick={toggleVideo}
                                 style={{ padding: '1rem', borderRadius: '50%', width: '60px', height: '60px' }}
+                                title={isVideoOff ? 'Turn on camera' : 'Turn off camera'}
                             >
                                 {isVideoOff ? '📷' : '🎥'}
                             </button>
@@ -415,7 +527,7 @@ const MeetingRoom = ({
                                 onClick={() => setCaptionsEnabled(!captionsEnabled)}
                                 disabled={!isSupported}
                                 style={{ padding: '1rem', borderRadius: '50%', width: '60px', height: '60px' }}
-                                title={isSupported ? 'Toggle captions' : 'Captions not supported'}
+                                title={isSupported ? (captionsEnabled ? 'Stop captions' : 'Start captions') : 'Captions not supported'}
                             >
                                 💬
                             </button>
@@ -423,6 +535,7 @@ const MeetingRoom = ({
                                 className="btn btn-secondary"
                                 onClick={() => setShowCaptions(!showCaptions)}
                                 style={{ padding: '1rem', borderRadius: '50%', width: '60px', height: '60px' }}
+                                title={showCaptions ? 'Hide transcript' : 'Show transcript'}
                             >
                                 📜
                             </button>
@@ -432,9 +545,9 @@ const MeetingRoom = ({
                     {/* Captions panel */}
                     {showCaptions && (
                         <div style={{ width: '350px', background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
-                            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600' }}>
-                                💬 Live Captions
-                                {captionsEnabled && isListening && <span style={{ marginLeft: '0.5rem', color: 'var(--success)' }}>●</span>}
+                            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span>💬 Live Captions</span>
+                                {captionsEnabled && isListening && <span style={{ color: 'var(--success)', fontSize: '0.75rem' }}>● Recording</span>}
                             </div>
 
                             <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
