@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campy Admin Setup</title>
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            background: #1a1a1a;
+            color: #fff;
+            font-family: system-ui, sans-serif;
+            padding: 2rem;
+        }
+
+        .card {
+            background: #2a2a2a;
+            padding: 1.5rem;
+            border-radius: 8px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            display: block;
+            width: 100%;
+            font-size: 1rem;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+        }
+
+        .log {
+            background: #111;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+            font-family: monospace;
+            white-space: pre-wrap;
+            min-height: 100px;
+        }
+
+        .success {
+            color: #4ade80;
+        }
+
+        .error {
+            color: #ef4444;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <h2>🚀 Admin Account Setup</h2>
+        <p>This script will create the following Admin accounts in Supabase:</p>
+        <ul>
+            <li>cjlara032107@gmail.com</li>
+            <li>aresmedia2026@gmail.com</li>
+        </ul>
+        <p><em>Note: If "Email Confirmations" are enabled in Supabase, you won't be able to log in until you click the
+                link in the emails.</em></p>
+        <button id="setupBtn" class="btn">Create Admin Accounts</button>
+        <div id="log" class="log">Waiting to start...</div>
+    </div>
+
+    <!-- Load App Scripts -->
+    <script src="js/supabase.js"></script>
+
+    <script>
+        const log = (msg, type = '') => {
+            const el = document.getElementById('log');
+            el.innerHTML += `<div class="${type}">> ${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        };
+
+        document.getElementById('setupBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('setupBtn');
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+
+            // Init Supabase
+            if (!Supabase.init()) {
+                log('Error: Could not initialize Supabase. Check config.', 'error');
+                return;
+            }
+
+            const admins = [
+                { email: 'cjlara032107@gmail.com', pass: 'demet5732595', name: 'Admin CJ' },
+                { email: 'aresmedia2026@gmail.com', pass: 'AresMedia_26', name: 'Admin Ares' }
+            ];
+
+            for (const admin of admins) {
+                try {
+                    log(`Creating account: ${admin.email}...`);
+
+                    // 1. Sign Up
+                    // Note: If user exists, this throws error. We handle that.
+                    try {
+                        await Supabase.signUp(admin.email, admin.pass, admin.name, 'admin');
+                        log(`✅ Created ${admin.email}`, 'success');
+                    } catch (e) {
+                        if (e.message.includes('already registered')) {
+                            log(`⚠️ User ${admin.email} already exists.`, 'warning');
+                            // Optional: Upgrading role if needed is tricky without admin api, 
+                            // but our schema handles duplicate email on INSERT usually.
+                            // However, Supabase Auth is separate.
+                        } else {
+                            throw e;
+                        }
+                    }
+
+                } catch (err) {
+                    log(`❌ Failed ${admin.email}: ${err.message}`, 'error');
+                }
+            }
+
+            log('--- Finished ---');
+            log('You can now open index.html and log in.');
+            btn.textContent = 'Done';
+        });
+    </script>
+</body>
+
+</html>

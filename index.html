@@ -13,6 +13,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
+  <!-- Supabase CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
   <!-- Styles -->
   <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -211,7 +214,7 @@
                 <label class="form-label">Assigned To</label>
                 <input type="text" class="form-input" id="assignedTo" placeholder="Who is handling this client?">
               </div>
-              <div class="form-group">
+              <div class="form-group admin-only">
                 <label class="form-label">Ads Expense (₱)</label>
                 <input type="number" class="form-input" id="adsExpense" placeholder="0" min="0">
               </div>
@@ -544,7 +547,35 @@
       </div>
     </div>
 
+    <!-- Login Modal -->
+    <div class="modal-overlay" id="loginModal">
+      <div class="modal" style="max-width: 400px;">
+        <div class="modal-header">
+          <h3 class="modal-title">🔐 Sign In to Campy</h3>
+        </div>
+        <div class="modal-body">
+          <form id="loginForm">
+            <div class="form-group">
+              <label class="form-label">Email</label>
+              <input type="email" class="form-input" id="loginEmail" required placeholder="your@email.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Password</label>
+              <input type="password" class="form-input" id="loginPassword" required placeholder="••••••••">
+            </div>
+            <div id="loginError" class="form-error" style="display: none; color: var(--error); margin-bottom: 1rem;">
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;" id="loginBtn">Sign In</button>
+          </form>
+          <p style="text-align: center; margin-top: 1rem; color: var(--text-muted); font-size: 0.875rem;">
+            Use offline mode? <a href="#" id="offlineModeBtn" style="color: var(--accent);">Continue without login</a>
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- Scripts -->
+    <script src="js/supabase.js"></script>
     <script src="js/storage.js"></script>
     <script src="js/clients.js"></script>
     <script src="js/phases.js"></script>

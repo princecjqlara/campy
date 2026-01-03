@@ -43,6 +43,16 @@ const Storage = {
 
   // Get all clients
   getClients() {
+    if (App.isOnlineMode) {
+      // Logic handled via async calls in clients.js usually, 
+      // but if we need synchronous return here it's tricky.
+      // Better to keep this as local storage for now and let the modules switch logic.
+      // Or, we return empty structure and let app logic fetch async.
+      // However, the simplest integration without massive refactor is:
+      // The calling code needs to be async or we sync data.
+      return JSON.parse(localStorage.getItem(this.KEYS.CLIENTS)) || [];
+    }
+
     try {
       return JSON.parse(localStorage.getItem(this.KEYS.CLIENTS)) || [];
     } catch (e) {
