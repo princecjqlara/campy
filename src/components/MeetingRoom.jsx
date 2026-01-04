@@ -1,7 +1,8 @@
-// MeetingRoom.jsx - Video call room with live captions, lobby, and screen share
+// MeetingRoom.jsx - Video call room with live captions, lobby, screen share, and AI
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getSupabaseClient } from '../services/supabase';
 import { useSpeechCaptions } from '../hooks/useSpeechCaptions';
+import { generateReplySuggestions, scoreConversationMove, correctCaptions } from '../services/aiService';
 
 // Throttle helper
 const createThrottle = (ms) => {
@@ -310,6 +311,12 @@ const MeetingRoom = ({
     const [isHost, setIsHost] = useState(false);
     const [showLobby, setShowLobby] = useState(false);
     const [guestSettings, setGuestSettings] = useState(null);
+
+    // AI features state
+    const [replySuggestions, setReplySuggestions] = useState([]);
+    const [conversationScore, setConversationScore] = useState(null);
+    const [aiEnabled, setAiEnabled] = useState(true);
+    const [loadingAi, setLoadingAi] = useState(false);
 
     const localVideoRef = useRef(null);
     const screenVideoRef = useRef(null);
@@ -759,6 +766,54 @@ const MeetingRoom = ({
         }
     }, [isLoggedIn, isSupported]);
 
+    // Generate AI reply suggestions when others speak (for logged-in users only)
+    useEffect(() => {
+        if (!isLoggedIn || !aiEnabled || transcripts.length === 0) return;
+
+        // Get last few transcripts from others
+        const otherTranscripts = transcripts
+            .filter(t => t.user_id !== currentUser?.id)
+            .slice(-5);
+
+        if (otherTranscripts.length === 0) return;
+
+        const generateSuggestions = async () => {
+            setLoadingAi(true);
+            try {
+                const conversation = otherTranscripts
+                    .map(t => `${t.display_name}: ${t.text}`)
+                    .join('\n');
+
+                const suggestions = await generateReplySuggestions(conversation);
+                if (suggestions && suggestions.length > 0) {
+                    setReplySuggestions(suggestions);
+                }
+
+                // Score the last message from the current user
+                const myLastMessage = transcripts
+                    .filter(t => t.user_id === currentUser?.id)
+                    .slice(-1)[0];
+
+                if (myLastMessage) {
+                    const score = await scoreConversationMove(
+                        myLastMessage.text,
+                        'sales meeting',
+                        transcripts.slice(-5).map(t => t.text)
+                    );
+                    setConversationScore(score);
+                }
+            } catch (e) {
+                console.warn('AI generation failed:', e);
+            } finally {
+                setLoadingAi(false);
+            }
+        };
+
+        // Debounce - only generate when transcripts stabilize
+        const timer = setTimeout(generateSuggestions, 2000);
+        return () => clearTimeout(timer);
+    }, [transcripts, isLoggedIn, aiEnabled, currentUser?.id]);
+
     // Leave room
     const handleLeave = async () => {
         await cleanup();
@@ -1071,6 +1126,69 @@ const MeetingRoom = ({
                             {!isSupported && (
                                 <div style={{ padding: '0.75rem', background: 'rgba(251,191,36,0.1)', color: 'var(--warning)', fontSize: '0.75rem' }}>
                                     ⚠️ Use Chrome/Edge for captions
+                                </div>
+                            )}
+
+                            {/* AI Suggestions Panel - Only for logged-in users */}
+                            {isLoggedIn && aiEnabled && (
+                                <div style={{ borderTop: '1px solid var(--border-color)', padding: '0.75rem', background: 'rgba(99,102,241,0.05)' }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--primary)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        🤖 AI Suggestions
+                                        {loadingAi && <span style={{ color: 'var(--text-muted)' }}>thinking...</span>}
+                                    </div>
+
+                                    {/* Conversation Score */}
+                                    {conversationScore && (
+                                        <div style={{
+                                            padding: '0.5rem',
+                                            borderRadius: '6px',
+                                            marginBottom: '0.5rem',
+                                            background: conversationScore.score === 'BRILLIANT' ? 'rgba(34,197,94,0.15)' :
+                                                conversationScore.score === 'GREAT' ? 'rgba(59,130,246,0.15)' :
+                                                    conversationScore.score === 'GOOD' ? 'rgba(156,163,175,0.15)' :
+                                                        'rgba(239,68,68,0.15)',
+                                            fontSize: '0.7rem'
+                                        }}>
+                                            <span style={{ fontWeight: '600' }}>
+                                                {conversationScore.score === 'BRILLIANT' ? '💎' :
+                                                    conversationScore.score === 'GREAT' ? '⭐' :
+                                                        conversationScore.score === 'GOOD' ? '👍' :
+                                                            conversationScore.score === 'INACCURACY' ? '🤔' :
+                                                                conversationScore.score === 'MISTAKE' ? '⚠️' : '❌'}
+                                                {conversationScore.score}
+                                            </span>
+                                            <div style={{ color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                                {conversationScore.reason}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Reply Suggestions */}
+                                    {replySuggestions.length > 0 ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                            {replySuggestions.slice(0, 3).map((suggestion, i) => (
+                                                <div
+                                                    key={i}
+                                                    style={{
+                                                        padding: '0.4rem 0.6rem',
+                                                        background: 'var(--bg-tertiary)',
+                                                        borderRadius: '6px',
+                                                        fontSize: '0.7rem',
+                                                        cursor: 'pointer',
+                                                        transition: 'background 0.2s'
+                                                    }}
+                                                    onClick={() => navigator.clipboard.writeText(suggestion)}
+                                                    title="Click to copy"
+                                                >
+                                                    {suggestion}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                            Suggestions will appear when others speak...
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
