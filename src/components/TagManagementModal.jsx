@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { getSupabaseClient } from '../services/supabase';
 
+const TAG_COLORS = ['#a3e635', '#34d399', '#22d3ee', '#818cf8', '#f472b6', '#fb923c', '#facc15', '#f87171'];
+
 const TagManagementModal = ({ isOpen, onClose, onTagsUpdated }) => {
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState(null); // { tagId, tagName, clientCount }
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState('#a3e635');
 
   useEffect(() => {
     if (isOpen) {
@@ -40,7 +44,7 @@ const TagManagementModal = ({ isOpen, onClose, onTagsUpdated }) => {
 
       if (error) throw error;
       setTags(data || []);
-      
+
       // Also save to localStorage for offline access
       localStorage.setItem('campy_tags', JSON.stringify(data || []));
     } catch (error) {
@@ -83,9 +87,9 @@ const TagManagementModal = ({ isOpen, onClose, onTagsUpdated }) => {
         const { data: allClients, error: fetchError } = await client
           .from('clients')
           .select('id, tags');
-        
+
         if (fetchError) throw fetchError;
-        const count = (allClients || []).filter(c => 
+        const count = (allClients || []).filter(c =>
           Array.isArray(c.tags) && c.tags.includes(tagName)
         ).length;
         return count;
@@ -119,7 +123,7 @@ const TagManagementModal = ({ isOpen, onClose, onTagsUpdated }) => {
               .from('clients')
               .select('id, tags')
               .contains('tags', [tagName]);
-            
+
             if (fetchError) throw fetchError;
             clientsWithTag = data;
           } catch (fetchError) {
@@ -127,9 +131,9 @@ const TagManagementModal = ({ isOpen, onClose, onTagsUpdated }) => {
             const { data: allClients, error: allError } = await client
               .from('clients')
               .select('id, tags');
-            
+
             if (allError) throw allError;
-            clientsWithTag = (allClients || []).filter(c => 
+            clientsWithTag = (allClients || []).filter(c =>
               Array.isArray(c.tags) && c.tags.includes(tagName)
             );
           }
@@ -171,6 +175,57 @@ const TagManagementModal = ({ isOpen, onClose, onTagsUpdated }) => {
     if (onTagsUpdated) onTagsUpdated();
   };
 
+  const handleAddTag = async () => {
+    if (!newTagName.trim()) {
+      alert('Please enter a tag name');
+      return;
+    }
+
+    // Check if tag already exists
+    if (tags.some(t => t.name.toLowerCase() === newTagName.trim().toLowerCase())) {
+      alert('A tag with this name already exists');
+      return;
+    }
+
+    setSaving(true);
+    const newTag = {
+      id: Date.now().toString(),
+      name: newTagName.trim(),
+      color: newTagColor
+    };
+
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from('tags')
+          .insert({ name: newTag.name, color: newTag.color })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        const updatedTags = [...tags, data];
+        setTags(updatedTags);
+        localStorage.setItem('campy_tags', JSON.stringify(updatedTags));
+      } catch (error) {
+        console.error('Error adding tag:', error);
+        alert('Error adding tag: ' + error.message);
+        setSaving(false);
+        return;
+      }
+    } else {
+      const updatedTags = [...tags, newTag];
+      setTags(updatedTags);
+      localStorage.setItem('campy_tags', JSON.stringify(updatedTags));
+    }
+
+    setNewTagName('');
+    setNewTagColor('#a3e635');
+    setSaving(false);
+    if (onTagsUpdated) onTagsUpdated();
+  };
+
   const cancelDelete = () => {
     setDeleteConfirm(null);
   };
@@ -191,6 +246,75 @@ const TagManagementModal = ({ isOpen, onClose, onTagsUpdated }) => {
             </div>
           ) : (
             <div>
+              {/* Add New Tag Form */}
+              <div style={{
+                marginBottom: '1.5rem',
+                padding: '1rem',
+                background: 'var(--bg-tertiary)',
+                borderRadius: 'var(--radius-lg)',
+                border: '1px solid var(--border-color)'
+              }}>
+                <h4 style={{ marginBottom: '0.75rem', color: 'var(--text-primary)' }}>➕ Add New Tag</h4>
+                <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: '150px' }}>
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Tag Name</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={newTagName}
+                      onChange={(e) => setNewTagName(e.target.value)}
+                      placeholder="e.g., VIP, Priority, New..."
+                      disabled={saving}
+                      onKeyPress={(e) => e.key === 'Enter' && handleAddTag()}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.75rem' }}>Color</label>
+                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                      {TAG_COLORS.map(color => (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setNewTagColor(color)}
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '50%',
+                            background: color,
+                            border: newTagColor === color ? '3px solid white' : '2px solid transparent',
+                            boxShadow: newTagColor === color ? '0 0 0 2px var(--primary)' : 'none',
+                            cursor: 'pointer'
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleAddTag}
+                    disabled={saving || !newTagName.trim()}
+                    style={{ height: '38px' }}
+                  >
+                    {saving ? 'Adding...' : 'Add Tag'}
+                  </button>
+                </div>
+                {newTagName.trim() && (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Preview: </span>
+                    <span style={{
+                      background: newTagColor,
+                      color: 'black',
+                      padding: '0.25rem 0.5rem',
+                      borderRadius: 'var(--radius-sm)',
+                      fontWeight: '600',
+                      fontSize: '0.875rem'
+                    }}>
+                      {newTagName.trim()}
+                    </span>
+                  </div>
+                )}
+              </div>
+
               <h4 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>Available Tags</h4>
               {tags.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
@@ -212,7 +336,7 @@ const TagManagementModal = ({ isOpen, onClose, onTagsUpdated }) => {
                         fontSize: '0.875rem'
                       }}
                     >
-                      <span className="tag" style={{ 
+                      <span className="tag" style={{
                         background: tag.color || '#a3e635',
                         color: 'black',
                         padding: '0.25rem 0.5rem',
@@ -257,9 +381,9 @@ const TagManagementModal = ({ isOpen, onClose, onTagsUpdated }) => {
                 Are you sure you want to delete the tag <strong>"{deleteConfirm.tagName}"</strong>?
               </p>
               {deleteConfirm.clientCount > 0 && (
-                <div style={{ 
-                  padding: '1rem', 
-                  background: 'var(--bg-tertiary)', 
+                <div style={{
+                  padding: '1rem',
+                  background: 'var(--bg-tertiary)',
                   borderRadius: 'var(--radius-lg)',
                   marginBottom: '1rem'
                 }}>
