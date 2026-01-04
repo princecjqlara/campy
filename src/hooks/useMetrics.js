@@ -28,6 +28,11 @@ export const useMetrics = (clients) => {
       return total + pkgExpense + adsExpense;
     }, 0);
 
+    // Expected Value: sum of ALL clients' package prices (regardless of phase or payment)
+    const expectedValue = clients.reduce((total, client) => {
+      return total + getPackagePrice(client);
+    }, 0);
+
     setMetrics({
       totalClients: clients.length,
       booked: clients.filter(c => c.phase === 'booked').length,
@@ -37,7 +42,8 @@ export const useMetrics = (clients) => {
       running: clients.filter(c => c.phase === 'running').length,
       monthlyRevenue: revenue,
       totalExpenses: totalExpenses,
-      netProfit: revenue - totalExpenses
+      netProfit: revenue - totalExpenses,
+      expectedValue: expectedValue
     });
   };
 
