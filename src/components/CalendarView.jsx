@@ -442,6 +442,7 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, onStartVide
       if (error) throw error;
 
       const link = `${window.location.origin}/room/${slug}`;
+      setRoomSlug(slug);
       setRoomLink(link);
 
       // Copy to clipboard
