@@ -609,12 +609,54 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
                   <button
                     className="btn btn-secondary"
                     onClick={() => {
-                      // Facebook OAuth flow - redirect to Facebook Login Dialog
+                      // Facebook OAuth flow - open in popup window
                       const appId = import.meta.env.VITE_FACEBOOK_APP_ID || '1822108718500869';
                       const redirectUri = encodeURIComponent(window.location.origin + '/api/facebook/callback');
                       const scope = 'pages_show_list,pages_messaging,pages_read_engagement,pages_manage_metadata';
                       const oauthUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code`;
-                      window.location.href = oauthUrl;
+
+                      // Open popup window
+                      const width = 600;
+                      const height = 700;
+                      const left = (window.screen.width - width) / 2;
+                      const top = (window.screen.height - height) / 2;
+
+                      const popup = window.open(
+                        oauthUrl,
+                        'facebook_oauth',
+                        `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no`
+                      );
+
+                      // Poll for popup close and URL changes
+                      const pollTimer = setInterval(() => {
+                        try {
+                          if (!popup || popup.closed) {
+                            clearInterval(pollTimer);
+                            // Check if URL has changed (OAuth callback was processed)
+                            const urlParams = new URLSearchParams(window.location.search);
+                            if (urlParams.get('fb_pages') || urlParams.get('fb_error')) {
+                              window.location.reload(); // Reload to trigger URL param handler
+                            }
+                            return;
+                          }
+
+                          // Try to read popup URL to detect callback
+                          if (popup.location.href.includes(window.location.origin)) {
+                            const popupUrl = new URL(popup.location.href);
+                            const fbPages = popupUrl.searchParams.get('fb_pages');
+                            const fbError = popupUrl.searchParams.get('fb_error');
+
+                            if (fbPages || fbError) {
+                              clearInterval(pollTimer);
+                              popup.close();
+                              // Navigate main window to get the params
+                              window.location.href = popup.location.href;
+                            }
+                          }
+                        } catch (e) {
+                          // Cross-origin error - popup is still on Facebook domain
+                        }
+                      }, 500);
                     }}
                   >
                     Connect Facebook Page
