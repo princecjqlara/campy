@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import facebookService from '../services/facebookService';
+import { analyzeConversation } from '../services/aiConversationAnalyzer';
 
 /**
  * React hook for Facebook Messenger functionality
@@ -14,6 +15,11 @@ export function useFacebookMessenger() {
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState(null);
     const [unreadCount, setUnreadCount] = useState(0);
+
+    // AI Analysis state
+    const [aiAnalysis, setAiAnalysis] = useState(null);
+    const [analyzing, setAnalyzing] = useState(false);
+    const [existingClient, setExistingClient] = useState(null);
 
     // Load connected pages
     const loadConnectedPages = useCallback(async () => {
@@ -72,15 +78,162 @@ export function useFacebookMessenger() {
         }
     }, [loadConversations]);
 
+    // Run AI analysis on current conversation
+    const runAIAnalysis = useCallback(async (msgs, participantName) => {
+        if (!msgs || msgs.length === 0) return null;
+
+        try {
+            setAnalyzing(true);
+            const analysis = await analyzeConversation(msgs, participantName);
+            setAiAnalysis(analysis);
+            return analysis;
+        } catch (err) {
+            console.error('Error running AI analysis:', err);
+            return null;
+        } finally {
+            setAnalyzing(false);
+        }
+    }, []);
+
+    // Check for existing client
+    const checkExistingClient = useCallback(async (participantName, details = {}) => {
+        try {
+            const client = await facebookService.findExistingClient(participantName, details);
+            setExistingClient(client);
+            return client;
+        } catch (err) {
+            console.error('Error checking existing client:', err);
+            return null;
+        }
+    }, []);
+
     // Select a conversation
     const selectConversation = useCallback(async (conversation) => {
         setSelectedConversation(conversation);
+        setAiAnalysis(null);
+        setExistingClient(null);
+
         if (conversation) {
-            await loadMessages(conversation.conversation_id);
+            const msgs = await loadMessages(conversation.conversation_id);
+
+            // Load existing AI analysis if available
+            const savedAnalysis = await facebookService.getAIAnalysis(conversation.conversation_id);
+            if (savedAnalysis?.ai_analysis && Object.keys(savedAnalysis.ai_analysis).length > 0) {
+                setAiAnalysis(savedAnalysis.ai_analysis);
+            }
+
+            // Check for existing client
+            await checkExistingClient(conversation.participant_name, savedAnalysis?.extracted_details);
         } else {
             setMessages([]);
         }
-    }, [loadMessages]);
+    }, [loadMessages, checkExistingClient]);
+
+    // Analyze current conversation with AI
+    const analyzeCurrentConversation = useCallback(async () => {
+        if (!selectedConversation || messages.length === 0) return null;
+
+        const analysis = await runAIAnalysis(messages, selectedConversation.participant_name);
+
+        if (analysis) {
+            // Save analysis to database
+            await facebookService.saveAIAnalysis(selectedConversation.conversation_id, analysis);
+
+            // Check for existing client with extracted details
+            await checkExistingClient(selectedConversation.participant_name, analysis.details);
+        }
+
+        return analysis;
+    }, [selectedConversation, messages, runAIAnalysis, checkExistingClient]);
+
+    // Transfer conversation to client pipeline
+    const transferToClient = useCallback(async (clientData = {}, userId) => {
+        if (!selectedConversation) return null;
+
+        try {
+            setLoading(true);
+            const client = await facebookService.transferToClient(
+                selectedConversation.conversation_id,
+                clientData,
+                userId
+            );
+
+            // Update selected conversation with linked client
+            setSelectedConversation(prev => ({
+                ...prev,
+                linked_client_id: client.id,
+                linked_client: client
+            }));
+
+            await loadConversations();
+            return client;
+        } catch (err) {
+            console.error('Error transferring to client:', err);
+            setError(err.message);
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    }, [selectedConversation, loadConversations]);
+
+    // Update existing lead with conversation data
+    const updateExistingLead = useCallback(async (clientId, updates = {}) => {
+        if (!selectedConversation) return null;
+
+        try {
+            setLoading(true);
+            const client = await facebookService.updateExistingLead(
+                selectedConversation.conversation_id,
+                clientId,
+                updates
+            );
+
+            // Update selected conversation
+            setSelectedConversation(prev => ({
+                ...prev,
+                linked_client_id: client.id,
+                linked_client: client
+            }));
+
+            await loadConversations();
+            return client;
+        } catch (err) {
+            console.error('Error updating existing lead:', err);
+            setError(err.message);
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    }, [selectedConversation, loadConversations]);
+
+    // Book meeting from AI detection
+    const bookMeetingFromAI = useCallback(async (meetingData = {}, userId) => {
+        if (!selectedConversation) return null;
+
+        try {
+            setLoading(true);
+            const meeting = await facebookService.createMeetingFromAI(
+                selectedConversation.conversation_id,
+                meetingData,
+                userId
+            );
+
+            // Update AI analysis state
+            setAiAnalysis(prev => ({
+                ...prev,
+                meetingBooked: true,
+                bookedMeetingId: meeting.id
+            }));
+
+            return meeting;
+        } catch (err) {
+            console.error('Error booking meeting:', err);
+            setError(err.message);
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    }, [selectedConversation]);
 
     // Send a message
     const sendMessage = useCallback(async (messageText) => {
@@ -294,6 +447,11 @@ export function useFacebookMessenger() {
         error,
         unreadCount,
 
+        // AI State
+        aiAnalysis,
+        analyzing,
+        existingClient,
+
         // Actions
         loadConversations,
         loadMessages,
@@ -309,9 +467,16 @@ export function useFacebookMessenger() {
         disconnectPage,
         loadConnectedPages,
 
+        // AI Actions
+        analyzeCurrentConversation,
+        transferToClient,
+        updateExistingLead,
+        bookMeetingFromAI,
+
         // Utilities
         clearError: () => setError(null)
     };
 }
 
 export default useFacebookMessenger;
+

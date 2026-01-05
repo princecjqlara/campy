@@ -15,12 +15,21 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         syncAllConversations,
         linkToClient,
         assignToUser,
-        clearError
+        clearError,
+        // AI features
+        aiAnalysis,
+        analyzing,
+        existingClient,
+        analyzeCurrentConversation,
+        transferToClient,
+        updateExistingLead,
+        bookMeetingFromAI
     } = useFacebookMessenger();
 
     const [messageText, setMessageText] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-    const [showLinkModal, setShowLinkModal] = useState(false);
+    const [showTransferModal, setShowTransferModal] = useState(false);
+    const [editableNotes, setEditableNotes] = useState('');
     const messagesEndRef = useRef(null);
 
     // Auto-scroll to bottom when messages change
@@ -488,10 +497,168 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                             </div>
                         </div>
 
+                        {/* AI Analysis Button */}
+                        <div style={{ marginTop: '1rem' }}>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={analyzeCurrentConversation}
+                                disabled={analyzing || messages.length === 0}
+                                style={{ width: '100%' }}
+                            >
+                                {analyzing ? '⏳ Analyzing...' : '🤖 Analyze with AI'}
+                            </button>
+                        </div>
+
+                        {/* AI Insights */}
+                        {aiAnalysis && (
+                            <div style={{
+                                marginTop: '1rem',
+                                padding: '1rem',
+                                background: 'var(--bg-secondary)',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--primary-alpha)'
+                            }}>
+                                <h5 style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    🤖 AI Insights
+                                </h5>
+
+                                {/* Lead Score */}
+                                {aiAnalysis.leadScore && (
+                                    <div style={{ marginBottom: '0.75rem' }}>
+                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Lead Score: </span>
+                                        <span style={{
+                                            padding: '0.125rem 0.5rem',
+                                            borderRadius: '999px',
+                                            fontSize: '0.75rem',
+                                            fontWeight: '600',
+                                            background: aiAnalysis.leadScore.score === 'hot' ? 'var(--error)' :
+                                                aiAnalysis.leadScore.score === 'warm' ? 'var(--warning)' : 'var(--text-muted)',
+                                            color: 'white'
+                                        }}>
+                                            {aiAnalysis.leadScore.score?.toUpperCase()}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* Meeting Detected */}
+                                {aiAnalysis.meeting?.hasMeeting && (
+                                    <div style={{
+                                        padding: '0.75rem',
+                                        background: 'var(--success-alpha, rgba(74, 222, 128, 0.1))',
+                                        borderRadius: 'var(--radius-sm)',
+                                        marginBottom: '0.75rem'
+                                    }}>
+                                        <div style={{ fontWeight: '500', color: 'var(--success)', marginBottom: '0.25rem' }}>
+                                            📅 Meeting Detected!
+                                        </div>
+                                        {aiAnalysis.meeting.datetime && (
+                                            <div style={{ fontSize: '0.875rem' }}>
+                                                {new Date(aiAnalysis.meeting.datetime).toLocaleString()}
+                                            </div>
+                                        )}
+                                        {aiAnalysis.meeting.rawTimeText && (
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                                                "{aiAnalysis.meeting.rawTimeText}"
+                                            </div>
+                                        )}
+                                        {!aiAnalysis.meetingBooked && (
+                                            <button
+                                                className="btn btn-sm btn-primary"
+                                                onClick={() => bookMeetingFromAI({}, currentUserId)}
+                                                disabled={loading}
+                                                style={{ marginTop: '0.5rem', width: '100%' }}
+                                            >
+                                                📆 Book This Meeting
+                                            </button>
+                                        )}
+                                        {aiAnalysis.meetingBooked && (
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--success)', marginTop: '0.5rem' }}>
+                                                ✅ Meeting booked!
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Extracted Details */}
+                                {aiAnalysis.details && Object.values(aiAnalysis.details).some(v => v) && (
+                                    <div style={{ marginBottom: '0.75rem' }}>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                                            Extracted Details:
+                                        </div>
+                                        {aiAnalysis.details.businessName && (
+                                            <div style={{ fontSize: '0.875rem' }}>🏢 {aiAnalysis.details.businessName}</div>
+                                        )}
+                                        {aiAnalysis.details.facebookPage && (
+                                            <div style={{ fontSize: '0.875rem' }}>📘 {aiAnalysis.details.facebookPage}</div>
+                                        )}
+                                        {aiAnalysis.details.niche && (
+                                            <div style={{ fontSize: '0.875rem' }}>🎯 {aiAnalysis.details.niche}</div>
+                                        )}
+                                        {aiAnalysis.details.phone && (
+                                            <div style={{ fontSize: '0.875rem' }}>📞 {aiAnalysis.details.phone}</div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* AI Notes */}
+                                {aiAnalysis.notes && (
+                                    <div>
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                                            AI Notes:
+                                        </div>
+                                        <div style={{ fontSize: '0.875rem', whiteSpace: 'pre-wrap' }}>
+                                            {aiAnalysis.notes}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Existing Client Warning */}
+                        {existingClient && !selectedConversation.linked_client_id && (
+                            <div style={{
+                                marginTop: '1rem',
+                                padding: '1rem',
+                                background: 'var(--warning-alpha, rgba(251, 191, 36, 0.1))',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--warning)'
+                            }}>
+                                <div style={{ fontWeight: '500', color: 'var(--warning)', marginBottom: '0.5rem' }}>
+                                    ⚠️ Existing Lead Found
+                                </div>
+                                <div style={{ fontSize: '0.875rem', marginBottom: '0.5rem' }}>
+                                    {existingClient.client_name}
+                                    {existingClient.business_name && ` (${existingClient.business_name})`}
+                                </div>
+                                <button
+                                    className="btn btn-sm btn-warning"
+                                    onClick={() => updateExistingLead(existingClient.id)}
+                                    disabled={loading}
+                                    style={{ width: '100%' }}
+                                >
+                                    🔄 Update This Lead
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Add to Pipeline Button */}
+                        {!selectedConversation.linked_client_id && !existingClient && (
+                            <div style={{ marginTop: '1rem' }}>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={() => transferToClient({}, currentUserId)}
+                                    disabled={loading}
+                                    style={{ width: '100%' }}
+                                >
+                                    ➕ Add to Pipeline
+                                </button>
+                            </div>
+                        )}
+
                         {/* Linked Client Info */}
                         {selectedConversation.linked_client && (
                             <div style={{
-                                marginTop: '1.5rem',
+                                marginTop: '1rem',
                                 padding: '1rem',
                                 background: 'var(--bg-secondary)',
                                 borderRadius: 'var(--radius-md)'

@@ -450,6 +450,234 @@ class FacebookService {
             )
             .subscribe();
     }
+
+    /**
+     * Save AI analysis results to conversation
+     */
+    async saveAIAnalysis(conversationId, analysis) {
+        try {
+            const updateData = {
+                ai_analysis: analysis,
+                ai_notes: analysis.notes || null,
+                extracted_details: analysis.details || {},
+                meeting_detected: analysis.meeting?.hasMeeting || false,
+                meeting_datetime: analysis.meeting?.datetime || null,
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await getSupabase()
+                .from('facebook_conversations')
+                .update(updateData)
+                .eq('conversation_id', conversationId);
+
+            if (error) throw error;
+            return true;
+        } catch (error) {
+            console.error('Error saving AI analysis:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Find existing client by name or contact details
+     */
+    async findExistingClient(participantName, details = {}) {
+        try {
+            let query = getSupabase()
+                .from('clients')
+                .select('*');
+
+            // Try to match by business name, client name, or contact details
+            const searchTerms = [
+                participantName,
+                details.businessName,
+                details.facebookPage,
+                details.phone,
+                details.email
+            ].filter(Boolean);
+
+            if (searchTerms.length === 0) return null;
+
+            // Search across multiple fields
+            const { data, error } = await query
+                .or(searchTerms.map(term =>
+                    `client_name.ilike.%${term}%,business_name.ilike.%${term}%,contact_details.ilike.%${term}%`
+                ).join(','));
+
+            if (error) throw error;
+            return data?.[0] || null;
+        } catch (error) {
+            console.error('Error finding existing client:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Transfer Facebook contact to client pipeline
+     */
+    async transferToClient(conversationId, clientData, userId) {
+        try {
+            // Get conversation details
+            const { data: conv, error: convError } = await getSupabase()
+                .from('facebook_conversations')
+                .select('*')
+                .eq('conversation_id', conversationId)
+                .single();
+
+            if (convError) throw convError;
+
+            // Create new client
+            const newClient = {
+                client_name: clientData.clientName || conv.participant_name,
+                business_name: clientData.businessName || conv.extracted_details?.businessName,
+                contact_details: clientData.contactDetails || conv.participant_id,
+                facebook_page: clientData.facebookPage || conv.extracted_details?.facebookPage,
+                niche: clientData.niche || conv.extracted_details?.niche,
+                notes: conv.ai_notes || clientData.notes || '',
+                phase: 'booked',
+                package: clientData.package || null,
+                payment_status: 'unpaid',
+                assigned_to: userId,
+                created_by: userId,
+                source: 'facebook_messenger',
+                created_at: new Date().toISOString()
+            };
+
+            const { data: client, error: clientError } = await getSupabase()
+                .from('clients')
+                .insert(newClient)
+                .select()
+                .single();
+
+            if (clientError) throw clientError;
+
+            // Link conversation to new client
+            await this.linkConversationToClient(conversationId, client.id);
+
+            return client;
+        } catch (error) {
+            console.error('Error transferring to client:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Update existing client/lead with conversation data
+     */
+    async updateExistingLead(conversationId, clientId, updates = {}) {
+        try {
+            // Get conversation for context
+            const { data: conv } = await getSupabase()
+                .from('facebook_conversations')
+                .select('*')
+                .eq('conversation_id', conversationId)
+                .single();
+
+            // Prepare update data
+            const updateData = {
+                updated_at: new Date().toISOString()
+            };
+
+            // Only update if new data is provided
+            if (updates.notes || conv?.ai_notes) {
+                updateData.notes = updates.notes || conv.ai_notes;
+            }
+            if (updates.facebookPage || conv?.extracted_details?.facebookPage) {
+                updateData.facebook_page = updates.facebookPage || conv.extracted_details?.facebookPage;
+            }
+            if (updates.niche || conv?.extracted_details?.niche) {
+                updateData.niche = updates.niche || conv.extracted_details?.niche;
+            }
+            if (updates.contactDetails || conv?.extracted_details?.phone) {
+                updateData.contact_details = updates.contactDetails || conv.extracted_details?.phone;
+            }
+
+            const { data, error } = await getSupabase()
+                .from('clients')
+                .update(updateData)
+                .eq('id', clientId)
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Link conversation to client if not already
+            await this.linkConversationToClient(conversationId, clientId);
+
+            return data;
+        } catch (error) {
+            console.error('Error updating existing lead:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Create meeting from AI-detected meeting
+     */
+    async createMeetingFromAI(conversationId, meetingData, userId) {
+        try {
+            // Get conversation
+            const { data: conv } = await getSupabase()
+                .from('facebook_conversations')
+                .select('*')
+                .eq('conversation_id', conversationId)
+                .single();
+
+            // Create meeting/event
+            const meeting = {
+                title: `Meeting with ${conv.participant_name || 'Facebook Contact'}`,
+                description: `Auto-booked from Facebook Messenger conversation.\n\n${conv.ai_notes || ''}`,
+                start_time: meetingData.datetime || conv.meeting_datetime,
+                client_id: conv.linked_client_id,
+                created_by: userId,
+                type: 'meeting',
+                attendees: [userId],
+                source: 'ai_detected',
+                created_at: new Date().toISOString()
+            };
+
+            const { data, error } = await getSupabase()
+                .from('events')
+                .insert(meeting)
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Update conversation with meeting ID
+            await getSupabase()
+                .from('facebook_conversations')
+                .update({
+                    auto_booked_meeting_id: data.id,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('conversation_id', conversationId);
+
+            return data;
+        } catch (error) {
+            console.error('Error creating meeting from AI:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get AI analysis for a conversation
+     */
+    async getAIAnalysis(conversationId) {
+        try {
+            const { data, error } = await getSupabase()
+                .from('facebook_conversations')
+                .select('ai_analysis, ai_notes, extracted_details, meeting_detected, meeting_datetime, auto_booked_meeting_id')
+                .eq('conversation_id', conversationId)
+                .single();
+
+            if (error) throw error;
+            return data;
+        } catch (error) {
+            console.error('Error getting AI analysis:', error);
+            return null;
+        }
+    }
 }
 
 export const facebookService = new FacebookService();

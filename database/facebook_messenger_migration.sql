@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS facebook_conversations (
   is_archived BOOLEAN DEFAULT false,
   linked_client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
   assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
+  -- AI Analysis fields
+  ai_analysis JSONB DEFAULT '{}',
+  ai_notes TEXT,
+  extracted_details JSONB DEFAULT '{}',
+  meeting_detected BOOLEAN DEFAULT false,
+  meeting_datetime TIMESTAMPTZ,
+  auto_booked_meeting_id UUID,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
