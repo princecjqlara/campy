@@ -906,6 +906,342 @@ class FacebookService {
             return null;
         }
     }
+
+    // ============================================
+    // ARCHIVE / DELETE CONVERSATIONS
+    // ============================================
+
+    /**
+     * Archive a conversation (soft delete)
+     */
+    async archiveConversation(conversationId) {
+        try {
+            const { error } = await getSupabase()
+                .from('facebook_conversations')
+                .update({
+                    is_archived: true,
+                    archived_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                })
+                .eq('conversation_id', conversationId);
+
+            if (error) throw error;
+            return true;
+        } catch (error) {
+            console.error('Error archiving conversation:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Restore an archived conversation
+     */
+    async restoreConversation(conversationId) {
+        try {
+            const { error } = await getSupabase()
+                .from('facebook_conversations')
+                .update({
+                    is_archived: false,
+                    archived_at: null,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('conversation_id', conversationId);
+
+            if (error) throw error;
+            return true;
+        } catch (error) {
+            console.error('Error restoring conversation:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get archived conversations
+     */
+    async getArchivedConversations(pageId = null) {
+        try {
+            let query = getSupabase()
+                .from('facebook_conversations')
+                .select('*')
+                .eq('is_archived', true)
+                .order('archived_at', { ascending: false });
+
+            if (pageId) {
+                query = query.eq('page_id', pageId);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+            return data || [];
+        } catch (error) {
+            console.error('Error fetching archived conversations:', error);
+            return [];
+        }
+    }
+
+    // ============================================
+    // TAGS MANAGEMENT
+    // ============================================
+
+    /**
+     * Get all tags for a page
+     */
+    async getTags(pageId) {
+        try {
+            const { data, error } = await getSupabase()
+                .from('conversation_tags')
+                .select('*')
+                .eq('page_id', pageId)
+                .order('name');
+
+            if (error) throw error;
+            return data || [];
+        } catch (error) {
+            console.error('Error fetching tags:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Create a new tag
+     */
+    async createTag(pageId, name, color = '#a855f7', userId = null) {
+        try {
+            const { data, error } = await getSupabase()
+                .from('conversation_tags')
+                .insert({
+                    page_id: pageId,
+                    name,
+                    color,
+                    created_by: userId
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+            return data;
+        } catch (error) {
+            console.error('Error creating tag:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete a tag
+     */
+    async deleteTag(tagId) {
+        try {
+            const { error } = await getSupabase()
+                .from('conversation_tags')
+                .delete()
+                .eq('id', tagId);
+
+            if (error) throw error;
+            return true;
+        } catch (error) {
+            console.error('Error deleting tag:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Assign a tag to a conversation
+     */
+    async assignTag(conversationId, tagId, userId = null) {
+        try {
+            const { data, error } = await getSupabase()
+                .from('conversation_tag_assignments')
+                .insert({
+                    conversation_id: conversationId,
+                    tag_id: tagId,
+                    assigned_by: userId
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+            return data;
+        } catch (error) {
+            console.error('Error assigning tag:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Remove a tag from a conversation
+     */
+    async removeTag(conversationId, tagId) {
+        try {
+            const { error } = await getSupabase()
+                .from('conversation_tag_assignments')
+                .delete()
+                .eq('conversation_id', conversationId)
+                .eq('tag_id', tagId);
+
+            if (error) throw error;
+            return true;
+        } catch (error) {
+            console.error('Error removing tag:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get tags for a conversation
+     */
+    async getConversationTags(conversationId) {
+        try {
+            const { data, error } = await getSupabase()
+                .from('conversation_tag_assignments')
+                .select('tag:tag_id(*)')
+                .eq('conversation_id', conversationId);
+
+            if (error) throw error;
+            return (data || []).map(d => d.tag);
+        } catch (error) {
+            console.error('Error fetching conversation tags:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Get conversations by tag
+     */
+    async getConversationsByTag(tagId) {
+        try {
+            const { data, error } = await getSupabase()
+                .from('conversation_tag_assignments')
+                .select('conversation:conversation_id(*)')
+                .eq('tag_id', tagId);
+
+            if (error) throw error;
+            return (data || []).map(d => d.conversation);
+        } catch (error) {
+            console.error('Error fetching conversations by tag:', error);
+            return [];
+        }
+    }
+
+    // ============================================
+    // BULK MESSAGING
+    // ============================================
+
+    /**
+     * Send bulk message to multiple recipients
+     * @param {string} pageId - Page ID
+     * @param {string} filterType - 'all', 'booked', 'unbooked', 'pipeline', 'not_pipeline', 'tag'
+     * @param {string} messageText - Message content
+     * @param {string} filterValue - Optional filter value (tag ID)
+     */
+    async sendBulkMessage(pageId, filterType, messageText, filterValue = null, userId = null) {
+        try {
+            // Get recipients based on filter
+            let query = getSupabase()
+                .from('facebook_conversations')
+                .select('conversation_id, participant_id')
+                .eq('page_id', pageId)
+                .eq('is_archived', false);
+
+            // Apply filters
+            switch (filterType) {
+                case 'booked':
+                    query = query.not('linked_client_id', 'is', null);
+                    break;
+                case 'unbooked':
+                    query = query.is('linked_client_id', null);
+                    break;
+                case 'pipeline':
+                    query = query.not('linked_client_id', 'is', null);
+                    break;
+                case 'not_pipeline':
+                    query = query.is('linked_client_id', null);
+                    break;
+                case 'tag':
+                    if (filterValue) {
+                        const tagConvs = await this.getConversationsByTag(filterValue);
+                        const convIds = tagConvs.map(c => c.conversation_id);
+                        query = query.in('conversation_id', convIds);
+                    }
+                    break;
+            }
+
+            const { data: recipients, error: recipientError } = await query;
+            if (recipientError) throw recipientError;
+
+            if (!recipients || recipients.length === 0) {
+                return { success: true, sent: 0, failed: 0, message: 'No recipients found' };
+            }
+
+            // Log the bulk message
+            const { data: bulkLog } = await getSupabase()
+                .from('bulk_messages')
+                .insert({
+                    page_id: pageId,
+                    message_text: messageText,
+                    filter_type: filterType,
+                    filter_value: filterValue,
+                    recipients_count: recipients.length,
+                    status: 'sending',
+                    sent_by: userId
+                })
+                .select()
+                .single();
+
+            // Send messages
+            let sent = 0;
+            let failed = 0;
+
+            for (const recipient of recipients) {
+                try {
+                    await this.sendMessage(pageId, recipient.participant_id, messageText);
+                    sent++;
+                    // Add small delay to avoid rate limiting
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                } catch (err) {
+                    console.error(`Failed to send to ${recipient.participant_id}:`, err);
+                    failed++;
+                }
+            }
+
+            // Update bulk log
+            if (bulkLog) {
+                await getSupabase()
+                    .from('bulk_messages')
+                    .update({
+                        sent_count: sent,
+                        failed_count: failed,
+                        status: 'completed',
+                        completed_at: new Date().toISOString()
+                    })
+                    .eq('id', bulkLog.id);
+            }
+
+            return { success: true, sent, failed, total: recipients.length };
+        } catch (error) {
+            console.error('Error sending bulk message:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get bulk message history
+     */
+    async getBulkMessageHistory(pageId) {
+        try {
+            const { data, error } = await getSupabase()
+                .from('bulk_messages')
+                .select('*')
+                .eq('page_id', pageId)
+                .order('created_at', { ascending: false })
+                .limit(50);
+
+            if (error) throw error;
+            return data || [];
+        } catch (error) {
+            console.error('Error fetching bulk message history:', error);
+            return [];
+        }
+    }
 }
 
 export const facebookService = new FacebookService();
