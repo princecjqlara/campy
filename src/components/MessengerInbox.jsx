@@ -45,6 +45,7 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
     const [showTransferModal, setShowTransferModal] = useState(false);
     const [editableNotes, setEditableNotes] = useState('');
     const [showMediaUpload, setShowMediaUpload] = useState(false);
+    const [smartSort, setSmartSort] = useState(true); // AI priority sorting
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
 
@@ -53,15 +54,29 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    // Filter conversations by search
-    const filteredConversations = conversations.filter(conv => {
-        if (!searchTerm) return true;
-        const term = searchTerm.toLowerCase();
-        return (
-            conv.participant_name?.toLowerCase().includes(term) ||
-            conv.last_message_text?.toLowerCase().includes(term)
-        );
-    });
+    // Filter and optionally sort conversations
+    const filteredConversations = conversations
+        .filter(conv => {
+            if (!searchTerm) return true;
+            const term = searchTerm.toLowerCase();
+            return (
+                conv.participant_name?.toLowerCase().includes(term) ||
+                conv.last_message_text?.toLowerCase().includes(term)
+            );
+        })
+        .sort((a, b) => {
+            // If smart sort enabled, prioritize conversations awaiting reply
+            if (smartSort) {
+                // Conversations where last message is NOT from page (customer sent last)
+                const aAwaiting = !a.last_message_from_page && a.unread_count > 0;
+                const bAwaiting = !b.last_message_from_page && b.unread_count > 0;
+
+                if (aAwaiting && !bAwaiting) return -1;
+                if (!aAwaiting && bAwaiting) return 1;
+            }
+            // Then sort by time
+            return new Date(b.last_message_time) - new Date(a.last_message_time);
+        });
 
     const handleSendMessage = async (e) => {
         e.preventDefault();
@@ -134,7 +149,7 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
             height: '600px',
             background: 'var(--bg-secondary)',
             borderRadius: 'var(--radius-lg)',
-            overflow: 'visible',
+            overflow: 'hidden',
             border: '1px solid var(--border-color)'
         }}>
             {/* Left Sidebar - Conversations List */}
@@ -182,16 +197,26 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                     </button>
                 </div>
 
-                {/* Search */}
-                <div style={{ padding: '0.75rem' }}>
-                    <input
-                        type="text"
-                        className="form-input"
-                        placeholder="Search conversations..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        style={{ width: '100%' }}
-                    />
+                {/* Search and Sort */}
+                <div style={{ padding: '0.5rem 0.75rem' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <input
+                            type="text"
+                            className="form-input"
+                            placeholder="Search..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{ flex: 1 }}
+                        />
+                    </div>
+                    <button
+                        className={`btn btn-sm ${smartSort ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => setSmartSort(!smartSort)}
+                        style={{ width: '100%', fontSize: '0.7rem' }}
+                        title="Prioritize conversations awaiting your reply"
+                    >
+                        {smartSort ? '🤖 AI Priority: ON' : '🤖 AI Priority: OFF'}
+                    </button>
                 </div>
 
                 {/* Conversations List */}
