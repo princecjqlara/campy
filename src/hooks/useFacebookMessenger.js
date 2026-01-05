@@ -34,6 +34,11 @@ export function useFacebookMessenger() {
     // Media upload state
     const [uploadingMedia, setUploadingMedia] = useState(false);
 
+    // Conversation pagination state
+    const [conversationPage, setConversationPage] = useState(1);
+    const [hasMoreConversations, setHasMoreConversations] = useState(false);
+    const [totalConversations, setTotalConversations] = useState(0);
+
     // Load connected pages
     const loadConnectedPages = useCallback(async () => {
         try {
@@ -47,18 +52,29 @@ export function useFacebookMessenger() {
         }
     }, []);
 
-    // Load conversations
-    const loadConversations = useCallback(async (pageId = null) => {
+    // Load conversations with pagination
+    const loadConversations = useCallback(async (pageId = null, reset = true) => {
         try {
             setLoading(true);
-            const convs = await facebookService.getConversations(pageId);
-            setConversations(convs);
+
+            const page = reset ? 1 : conversationPage;
+            const result = await facebookService.getConversationsWithPagination(pageId, page, 20);
+
+            if (reset) {
+                setConversations(result.conversations);
+            } else {
+                setConversations(prev => [...prev, ...result.conversations]);
+            }
+
+            setConversationPage(page);
+            setHasMoreConversations(result.hasMore);
+            setTotalConversations(result.total);
 
             // Calculate unread count
-            const totalUnread = convs.reduce((sum, c) => sum + (c.unread_count || 0), 0);
-            setUnreadCount(totalUnread);
+            const totalUnread = result.conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+            setUnreadCount(prev => reset ? totalUnread : prev + totalUnread);
 
-            return convs;
+            return result.conversations;
         } catch (err) {
             console.error('Error loading conversations:', err);
             setError(err.message);
@@ -66,7 +82,30 @@ export function useFacebookMessenger() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [conversationPage]);
+
+    // Load more conversations
+    const loadMoreConversations = useCallback(async (pageId = null) => {
+        if (!hasMoreConversations || loading) return;
+
+        try {
+            setLoading(true);
+            const nextPage = conversationPage + 1;
+
+            const result = await facebookService.getConversationsWithPagination(pageId, nextPage, 20);
+
+            setConversations(prev => [...prev, ...result.conversations]);
+            setConversationPage(nextPage);
+            setHasMoreConversations(result.hasMore);
+
+            return result.conversations;
+        } catch (err) {
+            console.error('Error loading more conversations:', err);
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [conversationPage, hasMoreConversations, loading]);
 
     // Load messages for a conversation
     const loadMessages = useCallback(async (conversationId) => {
@@ -589,9 +628,14 @@ export function useFacebookMessenger() {
         searchResults,
         searching,
         uploadingMedia,
+        // Conversation pagination
+        conversationPage,
+        hasMoreConversations,
+        totalConversations,
 
         // Actions
         loadConversations,
+        loadMoreConversations,
         loadMessages,
         selectConversation,
         sendMessage,

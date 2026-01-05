@@ -242,6 +242,43 @@ class FacebookService {
     }
 
     /**
+     * Get conversations with pagination
+     */
+    async getConversationsWithPagination(pageId = null, page = 1, limit = 20) {
+        try {
+            const offset = (page - 1) * limit;
+
+            let query = getSupabase()
+                .from('facebook_conversations')
+                .select(`
+                    *,
+                    linked_client:linked_client_id(id, client_name, business_name),
+                    assigned_user:assigned_to(id, name, email)
+                `, { count: 'exact' })
+                .order('last_message_time', { ascending: false })
+                .range(offset, offset + limit - 1);
+
+            if (pageId) {
+                query = query.eq('page_id', pageId);
+            }
+
+            const { data, error, count } = await query;
+
+            if (error) throw error;
+
+            return {
+                conversations: data || [],
+                total: count || 0,
+                page,
+                hasMore: (offset + limit) < (count || 0)
+            };
+        } catch (error) {
+            console.error('Error fetching paginated conversations:', error);
+            return { conversations: [], total: 0, page: 1, hasMore: false };
+        }
+    }
+
+    /**
      * Fetch messages for a conversation from Facebook
      */
     async fetchMessagesFromFacebook(conversationId, accessToken) {

@@ -33,7 +33,11 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         uploadingMedia,
         searching,
         searchResults,
-        clearSearch
+        clearSearch,
+        // Conversation pagination
+        hasMoreConversations,
+        loadMoreConversations,
+        totalConversations
     } = useFacebookMessenger();
 
     const [messageText, setMessageText] = useState('');
@@ -321,6 +325,32 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                 </div>
                             </div>
                         ))
+                    )}
+
+                    {/* Load More Conversations */}
+                    {hasMoreConversations && (
+                        <div style={{ padding: '0.75rem', textAlign: 'center' }}>
+                            <button
+                                className="btn btn-sm btn-secondary"
+                                onClick={loadMoreConversations}
+                                disabled={loading}
+                                style={{ width: '100%', opacity: 0.8 }}
+                            >
+                                {loading ? '⏳ Loading...' : `⬇️ Load More (${conversations.length}/${totalConversations})`}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Conversation count */}
+                    {!hasMoreConversations && conversations.length > 0 && (
+                        <div style={{
+                            padding: '0.5rem',
+                            textAlign: 'center',
+                            fontSize: '0.75rem',
+                            color: 'var(--text-muted)'
+                        }}>
+                            {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
+                        </div>
                     )}
                 </div>
             </div>
