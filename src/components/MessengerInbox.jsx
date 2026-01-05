@@ -116,7 +116,12 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                     </h3>
                     <button
                         className="btn btn-sm btn-secondary"
-                        onClick={syncAllConversations}
+                        onClick={async () => {
+                            const result = await syncAllConversations();
+                            if (!result) {
+                                alert('Sync failed. Make sure you have connected a Facebook Page in Admin Settings → Facebook Integration.');
+                            }
+                        }}
                         disabled={syncing}
                         title="Sync with Facebook"
                     >
