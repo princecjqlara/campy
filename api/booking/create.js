@@ -21,10 +21,20 @@ export default async function handler(req, res) {
 
     // Check Supabase config
     if (!supabaseUrl || !supabaseKey) {
-        return res.status(500).json({ error: 'Database not configured' });
+        console.error('Missing Supabase config:', { url: !!supabaseUrl, key: !!supabaseKey });
+        return res.status(500).json({
+            error: 'Database not configured',
+            details: 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'
+        });
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Create Supabase client with admin options to bypass RLS
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false
+        }
+    });
 
     try {
         const {
@@ -37,7 +47,7 @@ export default async function handler(req, res) {
             contactPhone,
             notes,
             customFormData,
-            customMessage // Optional custom confirmation message
+            customMessage
         } = req.body;
 
         if (!pageId || !date || !time || !contactName) {
@@ -47,72 +57,59 @@ export default async function handler(req, res) {
         // Create booking datetime
         const bookingDatetime = new Date(`${date}T${time}:00`);
 
-        // Check for overlap - prevent double-booking
-        try {
-            const { data: existing } = await supabase
-                .from('bookings')
-                .select('id')
-                .eq('page_id', pageId)
-                .eq('booking_date', date)
-                .eq('booking_time', `${time}:00`)
-                .in('status', ['pending', 'confirmed'])
-                .maybeSingle();
+        // Create the booking
+        const bookingData = {
+            page_id: pageId,
+            contact_psid: psid || null,
+            contact_name: contactName,
+            contact_email: contactEmail || null,
+            contact_phone: contactPhone || null,
+            booking_date: date,
+            booking_time: `${time}:00`,
+            booking_datetime: bookingDatetime.toISOString(),
+            form_data: customFormData || {},
+            notes: notes || null,
+            status: 'confirmed',
+            confirmed_at: new Date().toISOString()
+        };
 
-            if (existing) {
-                return res.status(409).json({
-                    error: 'This time slot is no longer available',
-                    code: 'SLOT_TAKEN'
+        console.log('Attempting to insert booking:', bookingData);
+
+        const { data, error: bookingError } = await supabase
+            .from('bookings')
+            .insert(bookingData)
+            .select()
+            .single();
+
+        if (bookingError) {
+            console.error('Supabase booking error:', bookingError);
+
+            // Check for common errors
+            if (bookingError.code === '42P01' || bookingError.message?.includes('does not exist')) {
+                return res.status(500).json({
+                    error: 'Bookings table not found',
+                    details: 'Please run the booking_migration.sql in Supabase SQL Editor',
+                    code: bookingError.code
                 });
             }
-        } catch (overlapError) {
-            // If bookings table doesn't exist, continue anyway
-            if (!overlapError.message?.includes('does not exist')) {
-                throw overlapError;
+
+            if (bookingError.code === '42501' || bookingError.message?.includes('permission denied')) {
+                return res.status(500).json({
+                    error: 'Permission denied',
+                    details: 'RLS policy blocking insert. Check that RLS allows inserts.',
+                    code: bookingError.code
+                });
             }
+
+            return res.status(500).json({
+                error: 'Failed to create booking',
+                details: bookingError.message,
+                code: bookingError.code,
+                hint: bookingError.hint || null
+            });
         }
 
-        // Create the booking
-        let booking = null;
-        try {
-            const { data, error: bookingError } = await supabase
-                .from('bookings')
-                .insert({
-                    page_id: pageId,
-                    contact_psid: psid,
-                    contact_name: contactName,
-                    contact_email: contactEmail,
-                    contact_phone: contactPhone,
-                    booking_date: date,
-                    booking_time: `${time}:00`,
-                    booking_datetime: bookingDatetime.toISOString(),
-                    form_data: customFormData || {},
-                    notes,
-                    status: 'confirmed',
-                    confirmed_at: new Date().toISOString()
-                })
-                .select()
-                .single();
-
-            if (bookingError) {
-                if (bookingError.code === '42P01' || bookingError.message?.includes('does not exist')) {
-                    // Table doesn't exist - return success but advise to run migration
-                    return res.status(200).json({
-                        success: true,
-                        message: 'Booking received (database pending migration)',
-                        booking: {
-                            contact_name: contactName,
-                            booking_date: date,
-                            booking_time: time
-                        }
-                    });
-                }
-                throw bookingError;
-            }
-            booking = data;
-        } catch (insertError) {
-            console.error('Insert error:', insertError);
-            throw insertError;
-        }
+        console.log('Booking created successfully:', data?.id);
 
         // Build confirmation message
         const formattedDate = new Date(date).toLocaleDateString('en-US', {
@@ -128,7 +125,6 @@ export default async function handler(req, res) {
         const hour12 = hour % 12 || 12;
         const formattedTime = `${hour12}:${minute} ${ampm}`;
 
-        // Use custom message if provided, otherwise default
         const confirmationMessage = customMessage ||
             `✅ Booking Confirmed!\n\n📅 Date: ${formattedDate}\n🕐 Time: ${formattedTime}\n\nWe look forward to meeting with you, ${contactName}!`;
 
@@ -153,20 +149,20 @@ export default async function handler(req, res) {
                 }
             } catch (msgError) {
                 console.error('Failed to send confirmation message:', msgError);
-                // Don't fail the booking if message fails
             }
         }
 
         return res.status(200).json({
             success: true,
-            booking,
+            booking: data,
             message: 'Booking confirmed successfully'
         });
     } catch (error) {
         console.error('Error creating booking:', error);
         return res.status(500).json({
             error: 'Failed to create booking',
-            details: error.message
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 }
