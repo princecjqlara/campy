@@ -83,6 +83,39 @@ function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
+  // Facebook page selection state
+  const [fbPagesForSelection, setFbPagesForSelection] = useState([]);
+  const [showFbPageModal, setShowFbPageModal] = useState(false);
+  const [connectingPage, setConnectingPage] = useState(false);
+
+  // Check for Facebook OAuth callback parameters
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+
+    // Handle Facebook error
+    const fbError = urlParams.get('fb_error');
+    if (fbError) {
+      showToast(decodeURIComponent(fbError), 'error');
+      window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+
+    // Handle Facebook pages for selection
+    const fbPages = urlParams.get('fb_pages');
+    if (fbPages) {
+      try {
+        const decoded = atob(fbPages);
+        const pages = JSON.parse(decoded);
+        setFbPagesForSelection(pages);
+        setShowFbPageModal(true);
+        window.history.replaceState({}, '', window.location.pathname);
+      } catch (e) {
+        console.error('Failed to parse Facebook pages:', e);
+        showToast('Failed to load Facebook pages', 'error');
+      }
+    }
+  }, []);
+
   const { isOnlineMode, initSupabase, signIn, signUp, signOut, getSession, isAdmin, getUserName, currentUser, currentUserProfile, getExpenses, saveExpenses, getAIPrompts, saveAIPrompts, getPackagePrices, savePackagePrices, getPackageDetails, savePackageDetails, refreshUserProfile, getAllUsers, syncAllData, addClientToSupabase, updateClientInSupabase, deleteClientFromSupabase } = useSupabase();
   const { unreadCount: notificationUnreadCount } = useNotifications(currentUser?.id);
   const { clients, addClient, updateClient, deleteClient, getClient } = useClients();
@@ -597,6 +630,97 @@ function App() {
           isSignUpMode={isSignUpMode}
           onClose={() => setShowLoginModal(false)}
         />
+      )}
+
+      {/* Facebook Page Selection Modal */}
+      {showFbPageModal && fbPagesForSelection.length > 0 && (
+        <div className="modal-overlay" onClick={() => setShowFbPageModal(false)}>
+          <div
+            className="modal-content"
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth: '500px' }}
+          >
+            <div className="modal-header">
+              <h2>📘 Select Facebook Page</h2>
+              <button className="modal-close" onClick={() => setShowFbPageModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                Select a page to connect for Messenger:
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {fbPagesForSelection.map(page => (
+                  <div
+                    key={page.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '1rem',
+                      padding: '1rem',
+                      background: 'var(--bg-tertiary)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-color)',
+                      cursor: 'pointer'
+                    }}
+                    onClick={async () => {
+                      if (connectingPage) return;
+                      setConnectingPage(true);
+                      try {
+                        // Import facebookService
+                        const { facebookService } = await import('./services/facebookService');
+                        await facebookService.connectPage({
+                          page_id: page.id,
+                          page_name: page.name,
+                          page_access_token: page.token,
+                          picture_url: page.picture
+                        }, currentUser?.id);
+                        showToast(`Connected ${page.name}!`, 'success');
+                        setShowFbPageModal(false);
+                        setFbPagesForSelection([]);
+                        // Switch to messenger tab
+                        setActiveMainTab('messenger');
+                      } catch (err) {
+                        console.error('Failed to connect page:', err);
+                        showToast(`Failed to connect: ${err.message}`, 'error');
+                      } finally {
+                        setConnectingPage(false);
+                      }
+                    }}
+                  >
+                    {page.picture ? (
+                      <img
+                        src={page.picture}
+                        alt={page.name}
+                        style={{ width: 48, height: 48, borderRadius: '50%' }}
+                      />
+                    ) : (
+                      <div style={{
+                        width: 48, height: 48, borderRadius: '50%',
+                        background: 'var(--primary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '1.5rem', color: 'white'
+                      }}>
+                        📘
+                      </div>
+                    )}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '600' }}>{page.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        Page ID: {page.id}
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={connectingPage}
+                    >
+                      {connectingPage ? '⏳' : 'Connect'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       <ToastContainer />

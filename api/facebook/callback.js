@@ -1,6 +1,6 @@
 /**
  * Facebook OAuth Callback Handler
- * Exchanges authorization code for access token
+ * Exchanges authorization code for access token and returns pages
  */
 
 export default async function handler(req, res) {
@@ -9,11 +9,11 @@ export default async function handler(req, res) {
     // Handle OAuth errors
     if (error) {
         console.error('Facebook OAuth error:', error, error_description);
-        return res.redirect(`/?error=${encodeURIComponent(error_description || error)}`);
+        return res.redirect(`/?fb_error=${encodeURIComponent(error_description || error)}`);
     }
 
     if (!code) {
-        return res.redirect('/?error=No authorization code received');
+        return res.redirect('/?fb_error=No authorization code received');
     }
 
     try {
@@ -29,33 +29,43 @@ export default async function handler(req, res) {
 
         if (tokenData.error) {
             console.error('Token exchange error:', tokenData.error);
-            return res.redirect(`/?error=${encodeURIComponent(tokenData.error.message)}`);
+            return res.redirect(`/?fb_error=${encodeURIComponent(tokenData.error.message)}`);
         }
 
         const userAccessToken = tokenData.access_token;
 
-        // Get user's pages
-        const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?access_token=${userAccessToken}`;
+        // Get user's pages with relevant fields
+        const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,picture&access_token=${userAccessToken}`;
         const pagesResponse = await fetch(pagesUrl);
         const pagesData = await pagesResponse.json();
 
         if (pagesData.error) {
             console.error('Pages fetch error:', pagesData.error);
-            return res.redirect(`/?error=${encodeURIComponent(pagesData.error.message)}`);
+            return res.redirect(`/?fb_error=${encodeURIComponent(pagesData.error.message)}`);
         }
 
-        // Store pages info in a session/cookie or redirect with data
-        // For now, redirect with success message
-        const pageCount = pagesData.data?.length || 0;
+        const pages = pagesData.data || [];
 
-        console.log('Connected pages:', pagesData.data);
+        if (pages.length === 0) {
+            return res.redirect('/?fb_error=No Facebook Pages found. Make sure you have admin access to at least one Facebook Page.');
+        }
 
-        // Redirect back to app with success
-        // In production, you'd store the page tokens in your database
-        return res.redirect(`/?facebook_connected=true&pages=${pageCount}`);
+        // Encode pages data for URL (simplified - just essential info for selection)
+        const pagesForSelection = pages.map(p => ({
+            id: p.id,
+            name: p.name,
+            token: p.access_token,
+            picture: p.picture?.data?.url
+        }));
+
+        // Store in base64 encoded JSON for URL safety
+        const encodedPages = Buffer.from(JSON.stringify(pagesForSelection)).toString('base64');
+
+        // Redirect with pages data for selection
+        return res.redirect(`/?fb_pages=${encodedPages}`);
 
     } catch (error) {
         console.error('OAuth callback error:', error);
-        return res.redirect(`/?error=${encodeURIComponent(error.message)}`);
+        return res.redirect(`/?fb_error=${encodeURIComponent(error.message)}`);
     }
 }
