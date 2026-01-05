@@ -486,7 +486,8 @@ const styles = {
     },
     monthTitle: {
         fontWeight: '600',
-        fontSize: '1rem'
+        fontSize: '1rem',
+        color: '#1a1a1a'
     },
     weekdays: {
         display: 'grid',
@@ -497,8 +498,9 @@ const styles = {
     weekday: {
         textAlign: 'center',
         fontSize: '0.75rem',
-        color: '#999',
-        padding: '0.5rem'
+        color: '#555',
+        padding: '0.5rem',
+        fontWeight: '500'
     },
     days: {
         display: 'grid',
@@ -513,11 +515,13 @@ const styles = {
         borderRadius: '8px',
         cursor: 'pointer',
         fontSize: '0.875rem',
-        transition: 'all 0.2s'
+        transition: 'all 0.2s',
+        color: '#1a1a1a'
     },
     dayDisabled: {
-        color: '#ccc',
-        cursor: 'not-allowed'
+        color: '#999',
+        cursor: 'not-allowed',
+        opacity: '0.6'
     },
     daySelected: {
         background: '#2e7d32',

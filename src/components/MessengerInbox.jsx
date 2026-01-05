@@ -306,7 +306,9 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         <div style={{
             display: 'grid',
             gridTemplateColumns: '280px 1fr 260px',
-            height: '600px',
+            height: 'calc(100vh - 180px)',
+            minHeight: '500px',
+            maxHeight: '900px',
             background: 'var(--bg-secondary)',
             borderRadius: 'var(--radius-lg)',
             overflow: 'hidden',
