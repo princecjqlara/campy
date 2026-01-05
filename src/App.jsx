@@ -88,14 +88,14 @@ function App() {
   const [showFbPageModal, setShowFbPageModal] = useState(false);
   const [connectingPage, setConnectingPage] = useState(false);
 
-  // Check for Facebook OAuth callback parameters
+  // Check for Facebook OAuth callback parameters - run FIRST before any other effects
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
 
     // Handle Facebook error
     const fbError = urlParams.get('fb_error');
     if (fbError) {
-      showToast(decodeURIComponent(fbError), 'error');
+      alert('Facebook Error: ' + decodeURIComponent(fbError));
       window.history.replaceState({}, '', window.location.pathname);
       return;
     }
@@ -103,15 +103,26 @@ function App() {
     // Handle Facebook pages for selection
     const fbPages = urlParams.get('fb_pages');
     if (fbPages) {
+      console.log('FB Pages param found:', fbPages);
       try {
         const decoded = atob(fbPages);
+        console.log('Decoded:', decoded);
         const pages = JSON.parse(decoded);
-        setFbPagesForSelection(pages);
-        setShowFbPageModal(true);
-        window.history.replaceState({}, '', window.location.pathname);
+        console.log('Parsed pages:', pages);
+
+        if (pages && pages.length > 0) {
+          setFbPagesForSelection(pages);
+          setShowFbPageModal(true);
+          // Keep URL clean
+          window.history.replaceState({}, '', window.location.pathname);
+          // Show alert to confirm pages received
+          alert(`Found ${pages.length} Facebook page(s). Select one to connect.`);
+        } else {
+          alert('No Facebook pages found. Make sure you have admin access to at least one Facebook Page.');
+        }
       } catch (e) {
         console.error('Failed to parse Facebook pages:', e);
-        showToast('Failed to load Facebook pages', 'error');
+        alert('Failed to load Facebook pages: ' + e.message);
       }
     }
   }, []);
