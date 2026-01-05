@@ -1,27 +1,33 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
-);
+// Initialize Supabase with fallbacks
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v18.0';
 
 /**
  * Cron job to process follow-up reminders for bookings
- * Configure in Vercel: Run every hour
+ * Call via: GET /api/cron/follow-up
  */
 export default async function handler(req, res) {
-    // Verify cron secret (Vercel cron jobs send this header)
-    const authHeader = req.headers.authorization;
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        // Allow in development without secret
-        if (process.env.NODE_ENV === 'production') {
-            return res.status(401).json({ error: 'Unauthorized' });
-        }
+    // Allow GET requests from cron services
+    if (req.method !== 'GET' && req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
     }
 
     console.log('Starting follow-up cron job...');
+
+    // Check Supabase config
+    if (!supabaseUrl || !supabaseKey) {
+        console.log('Supabase not configured');
+        return res.status(200).json({
+            success: true,
+            message: 'Supabase not configured, skipping'
+        });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
 
     try {
         const now = new Date();
@@ -36,7 +42,19 @@ export default async function handler(req, res) {
             .lte('booking_datetime', in24Hours.toISOString())
             .not('contact_psid', 'is', null);
 
-        if (error) throw error;
+        // Handle table not existing gracefully
+        if (error) {
+            if (error.code === '42P01' || error.message?.includes('does not exist')) {
+                console.log('Bookings table does not exist yet');
+                return res.status(200).json({
+                    success: true,
+                    message: 'Bookings table not found. Run booking_migration.sql first.',
+                    checked: 0,
+                    sent: 0
+                });
+            }
+            throw error;
+        }
 
         console.log(`Found ${bookings?.length || 0} bookings to check`);
 
