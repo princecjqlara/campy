@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useFacebookMessenger } from '../hooks/useFacebookMessenger';
+import { facebookService } from '../services/facebookService';
 
 const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
     const {
@@ -16,6 +17,7 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         linkToClient,
         assignToUser,
         clearError,
+        loadConversations,
         // AI features
         aiAnalysis,
         analyzing,
@@ -46,6 +48,20 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
     const [editableNotes, setEditableNotes] = useState('');
     const [showMediaUpload, setShowMediaUpload] = useState(false);
     const [smartSort, setSmartSort] = useState(true); // AI priority sorting
+
+    // New UI state
+    const [showBulkModal, setShowBulkModal] = useState(false);
+    const [bulkMessage, setBulkMessage] = useState('');
+    const [bulkFilter, setBulkFilter] = useState('all');
+    const [bulkSending, setBulkSending] = useState(false);
+    const [showTagsModal, setShowTagsModal] = useState(false);
+    const [tags, setTags] = useState([]);
+    const [newTagName, setNewTagName] = useState('');
+    const [newTagColor, setNewTagColor] = useState('#a855f7');
+    const [selectedTagFilter, setSelectedTagFilter] = useState(null);
+    const [showArchived, setShowArchived] = useState(false);
+    const [archivedConversations, setArchivedConversations] = useState([]);
+
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
 
@@ -100,6 +116,127 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
             // Then sort by time
             return new Date(b.last_message_time) - new Date(a.last_message_time);
         });
+
+    // Load tags on mount
+    useEffect(() => {
+        loadTags();
+    }, []);
+
+    const loadTags = async () => {
+        try {
+            const pageId = conversations[0]?.page_id;
+            if (pageId) {
+                const tagData = await facebookService.getTags(pageId);
+                setTags(tagData);
+            }
+        } catch (err) {
+            console.error('Error loading tags:', err);
+        }
+    };
+
+    // Archive conversation
+    const handleArchiveConversation = async (conversationId) => {
+        if (!confirm('Archive this conversation? It can be restored later.')) return;
+        try {
+            await facebookService.archiveConversation(conversationId);
+            loadConversations?.(null, true);
+            alert('Conversation archived');
+        } catch (err) {
+            alert('Failed to archive: ' + err.message);
+        }
+    };
+
+    // Restore conversation
+    const handleRestoreConversation = async (conversationId) => {
+        try {
+            await facebookService.restoreConversation(conversationId);
+            loadArchivedConversations();
+            loadConversations?.(null, true);
+            alert('Conversation restored');
+        } catch (err) {
+            alert('Failed to restore: ' + err.message);
+        }
+    };
+
+    // Load archived conversations
+    const loadArchivedConversations = async () => {
+        try {
+            const pageId = conversations[0]?.page_id;
+            if (pageId) {
+                const archived = await facebookService.getArchivedConversations(pageId);
+                setArchivedConversations(archived);
+            }
+        } catch (err) {
+            console.error('Error loading archived:', err);
+        }
+    };
+
+    // Toggle show archived
+    const toggleShowArchived = () => {
+        if (!showArchived) {
+            loadArchivedConversations();
+        }
+        setShowArchived(!showArchived);
+    };
+
+    // Create tag
+    const handleCreateTag = async () => {
+        if (!newTagName.trim()) return;
+        try {
+            const pageId = conversations[0]?.page_id;
+            await facebookService.createTag(pageId, newTagName, newTagColor, currentUserId);
+            setNewTagName('');
+            loadTags();
+        } catch (err) {
+            alert('Failed to create tag: ' + err.message);
+        }
+    };
+
+    // Delete tag
+    const handleDeleteTag = async (tagId) => {
+        if (!confirm('Delete this tag?')) return;
+        try {
+            await facebookService.deleteTag(tagId);
+            loadTags();
+        } catch (err) {
+            alert('Failed to delete tag: ' + err.message);
+        }
+    };
+
+    // Assign tag to conversation
+    const handleAssignTag = async (conversationId, tagId) => {
+        try {
+            await facebookService.assignTag(conversationId, tagId, currentUserId);
+            loadConversations?.(null, true);
+        } catch (err) {
+            console.error('Error assigning tag:', err);
+        }
+    };
+
+    // Send bulk message
+    const handleSendBulkMessage = async () => {
+        if (!bulkMessage.trim()) return;
+        if (!confirm(`Send this message to ${bulkFilter} recipients?`)) return;
+
+        setBulkSending(true);
+        try {
+            const pageId = conversations[0]?.page_id;
+            const result = await facebookService.sendBulkMessage(
+                pageId,
+                bulkFilter,
+                bulkMessage,
+                null,
+                currentUserId
+            );
+            alert(`Bulk message sent! ✅ ${result.sent} sent, ❌ ${result.failed} failed`);
+            setShowBulkModal(false);
+            setBulkMessage('');
+        } catch (err) {
+            alert('Failed to send bulk message: ' + err.message);
+        } finally {
+            setBulkSending(false);
+        }
+    };
 
     const handleSendMessage = async (e) => {
         e.preventDefault();
@@ -205,19 +342,42 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                             </span>
                         )}
                     </h3>
-                    <button
-                        className="btn btn-sm btn-secondary"
-                        onClick={async () => {
-                            const result = await syncAllConversations();
-                            if (!result) {
-                                alert('Sync failed. Make sure you have connected a Facebook Page in Admin Settings → Facebook Integration.');
-                            }
-                        }}
-                        disabled={syncing}
-                        title="Sync with Facebook"
-                    >
-                        {syncing ? '⏳' : '🔄'}
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                        <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => setShowBulkModal(true)}
+                            title="Send bulk message"
+                        >
+                            📢
+                        </button>
+                        <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => setShowTagsModal(true)}
+                            title="Manage tags"
+                        >
+                            🏷️
+                        </button>
+                        <button
+                            className={`btn btn-sm ${showArchived ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={toggleShowArchived}
+                            title="Toggle archived"
+                        >
+                            🗂️
+                        </button>
+                        <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={async () => {
+                                const result = await syncAllConversations();
+                                if (!result) {
+                                    alert('Sync failed. Make sure you have connected a Facebook Page in Admin Settings → Facebook Integration.');
+                                }
+                            }}
+                            disabled={syncing}
+                            title="Sync with Facebook"
+                        >
+                            {syncing ? '⏳' : '🔄'}
+                        </button>
+                    </div>
                 </div>
 
                 {/* Search and Sort */}
@@ -914,6 +1074,182 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                     >
                         ✕
                     </button>
+                </div>
+            )}
+
+            {/* Bulk Message Modal */}
+            {showBulkModal && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1001
+                }}>
+                    <div style={{
+                        background: 'var(--bg-primary)',
+                        borderRadius: 'var(--radius-lg)',
+                        padding: '1.5rem',
+                        width: '90%',
+                        maxWidth: '500px'
+                    }}>
+                        <h3 style={{ marginTop: 0 }}>📢 Send Bulk Message</h3>
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                            Uses ACCOUNT_UPDATE tag for Facebook compliance
+                        </p>
+
+                        <div style={{ marginBottom: '1rem' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
+                                Send to:
+                            </label>
+                            <select
+                                className="form-input"
+                                value={bulkFilter}
+                                onChange={(e) => setBulkFilter(e.target.value)}
+                                style={{ width: '100%' }}
+                            >
+                                <option value="all">All Conversations</option>
+                                <option value="booked">Booked (In Pipeline)</option>
+                                <option value="unbooked">Not Booked</option>
+                                <option value="pipeline">In Pipeline</option>
+                                <option value="not_pipeline">Not in Pipeline</option>
+                            </select>
+                        </div>
+
+                        <div style={{ marginBottom: '1rem' }}>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500' }}>
+                                Message:
+                            </label>
+                            <textarea
+                                className="form-input"
+                                value={bulkMessage}
+                                onChange={(e) => setBulkMessage(e.target.value)}
+                                placeholder="Type your message..."
+                                rows={4}
+                                style={{ width: '100%', resize: 'vertical' }}
+                            />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setShowBulkModal(false)}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                className="btn btn-primary"
+                                onClick={handleSendBulkMessage}
+                                disabled={bulkSending || !bulkMessage.trim()}
+                            >
+                                {bulkSending ? 'Sending...' : '📢 Send to All'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Tags Modal */}
+            {showTagsModal && (
+                <div style={{
+                    position: 'fixed',
+                    inset: 0,
+                    background: 'rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1001
+                }}>
+                    <div style={{
+                        background: 'var(--bg-primary)',
+                        borderRadius: 'var(--radius-lg)',
+                        padding: '1.5rem',
+                        width: '90%',
+                        maxWidth: '400px'
+                    }}>
+                        <h3 style={{ marginTop: 0 }}>🏷️ Manage Tags</h3>
+
+                        {/* Create new tag */}
+                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                            <input
+                                type="color"
+                                value={newTagColor}
+                                onChange={(e) => setNewTagColor(e.target.value)}
+                                style={{ width: '40px', height: '36px', padding: 0, border: 'none', cursor: 'pointer' }}
+                            />
+                            <input
+                                type="text"
+                                className="form-input"
+                                value={newTagName}
+                                onChange={(e) => setNewTagName(e.target.value)}
+                                placeholder="New tag name..."
+                                style={{ flex: 1 }}
+                            />
+                            <button
+                                className="btn btn-primary btn-sm"
+                                onClick={handleCreateTag}
+                                disabled={!newTagName.trim()}
+                            >
+                                +
+                            </button>
+                        </div>
+
+                        {/* Tag list */}
+                        <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                            {tags.length === 0 ? (
+                                <p style={{ color: 'var(--text-muted)', textAlign: 'center' }}>
+                                    No tags yet. Create one above!
+                                </p>
+                            ) : (
+                                tags.map(tag => (
+                                    <div
+                                        key={tag.id}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            padding: '0.5rem',
+                                            borderRadius: 'var(--radius-sm)',
+                                            marginBottom: '0.25rem',
+                                            background: 'var(--bg-secondary)'
+                                        }}
+                                    >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                            <div style={{
+                                                width: '12px',
+                                                height: '12px',
+                                                borderRadius: '50%',
+                                                background: tag.color
+                                            }} />
+                                            <span>{tag.name}</span>
+                                        </div>
+                                        <button
+                                            onClick={() => handleDeleteTag(tag.id)}
+                                            style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                color: 'var(--text-muted)'
+                                            }}
+                                        >
+                                            🗑️
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setShowTagsModal(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
