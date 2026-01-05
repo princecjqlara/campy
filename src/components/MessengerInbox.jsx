@@ -367,7 +367,9 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
             <div style={{
                 display: 'flex',
                 flexDirection: 'column',
-                background: 'var(--bg-primary)'
+                background: 'var(--bg-primary)',
+                height: '100%',
+                overflow: 'hidden'
             }}>
                 {selectedConversation ? (
                     <>
