@@ -33,10 +33,10 @@ const ViewClientModal = ({ client, onClose, onEdit, onViewCommunication }) => {
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Payment Status</div>
               <div style={{ fontWeight: '500', textTransform: 'capitalize' }}>{client.paymentStatus}</div>
             </div>
-            {client.assignedTo && (
+            {(client.assignedUser || client.assignedTo) && (
               <div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Assigned To</div>
-                <div style={{ fontWeight: '500' }}>{client.assignedTo}</div>
+                <div style={{ fontWeight: '500' }}>{client.assignedUser?.name || client.assignedUser?.email || client.assignedTo}</div>
               </div>
             )}
             {client.contactDetails && (
@@ -76,14 +76,14 @@ const ViewClientModal = ({ client, onClose, onEdit, onViewCommunication }) => {
                     <span style={{ fontWeight: '500' }}>{client.subscriptionUsageDetail.meetingMinutesUsed}</span>
                   </div>
                 )}
-                {(!client.subscriptionUsageDetail.videosUsed && 
-                  !client.subscriptionUsageDetail.mainVideosUsed && 
-                  !client.subscriptionUsageDetail.photosUsed && 
+                {(!client.subscriptionUsageDetail.videosUsed &&
+                  !client.subscriptionUsageDetail.mainVideosUsed &&
+                  !client.subscriptionUsageDetail.photosUsed &&
                   !client.subscriptionUsageDetail.meetingMinutesUsed) && (
-                  <div style={{ color: 'var(--text-muted)', gridColumn: '1 / -1' }}>
-                    No items used yet
-                  </div>
-                )}
+                    <div style={{ color: 'var(--text-muted)', gridColumn: '1 / -1' }}>
+                      No items used yet
+                    </div>
+                  )}
               </div>
             </div>
           )}
@@ -188,9 +188,9 @@ const ViewClientModal = ({ client, onClose, onEdit, onViewCommunication }) => {
         <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between' }}>
           <div>
             {onViewCommunication && (
-              <button 
-                type="button" 
-                className="btn btn-secondary" 
+              <button
+                type="button"
+                className="btn btn-secondary"
                 onClick={() => {
                   onClose();
                   onViewCommunication();

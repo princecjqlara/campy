@@ -105,10 +105,10 @@ const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClie
                 return (
                   <tr key={client.id} className="client-table-row">
                     <td>
-                      <span className="priority-badge" style={{ 
-                        background: client.priority === 1 ? 'var(--danger)' : 
-                                   client.priority === 2 ? 'var(--warning)' : 
-                                   'var(--text-muted)',
+                      <span className="priority-badge" style={{
+                        background: client.priority === 1 ? 'var(--danger)' :
+                          client.priority === 2 ? 'var(--warning)' :
+                            'var(--text-muted)',
                         color: 'white',
                         padding: '0.25rem 0.5rem',
                         borderRadius: '4px',
@@ -144,7 +144,7 @@ const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClie
                         }}
                         onClick={(e) => e.stopPropagation()}
                         onMouseDown={(e) => e.stopPropagation()}
-                        style={{ 
+                        style={{
                           minWidth: '140px',
                           fontSize: '0.875rem',
                           padding: '0.375rem 0.5rem',
@@ -163,7 +163,7 @@ const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClie
                       </select>
                     </td>
                     <td>
-                      <span style={{ 
+                      <span style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '0.25rem'
@@ -172,7 +172,7 @@ const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClie
                       </span>
                     </td>
                     <td>{client.paymentSchedule || '—'}</td>
-                    <td>{client.assignedTo || '—'}</td>
+                    <td>{client.assignedUser?.name || client.assignedUser?.email || client.assignedTo || '—'}</td>
                     <td>
                       {client.monthsWithClient > 0 ? (
                         <span>{client.monthsWithClient}mo</span>
