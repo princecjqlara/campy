@@ -306,9 +306,8 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         <div style={{
             display: 'grid',
             gridTemplateColumns: '280px 1fr 260px',
-            height: 'calc(100vh - 180px)',
-            minHeight: '500px',
-            maxHeight: '900px',
+            height: 'calc(100vh - 120px)',
+            minHeight: '400px',
             background: 'var(--bg-secondary)',
             borderRadius: 'var(--radius-lg)',
             overflow: 'hidden',
@@ -319,7 +318,9 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                 borderRight: '1px solid var(--border-color)',
                 display: 'flex',
                 flexDirection: 'column',
-                background: 'var(--bg-primary)'
+                background: 'var(--bg-primary)',
+                height: '100%',
+                overflow: 'hidden'
             }}>
                 {/* Header */}
                 <div style={{
