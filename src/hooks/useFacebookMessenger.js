@@ -21,6 +21,19 @@ export function useFacebookMessenger() {
     const [analyzing, setAnalyzing] = useState(false);
     const [existingClient, setExistingClient] = useState(null);
 
+    // Pagination state
+    const [messagePage, setMessagePage] = useState(1);
+    const [hasMoreMessages, setHasMoreMessages] = useState(false);
+    const [totalMessages, setTotalMessages] = useState(0);
+
+    // Search state
+    const [messageSearch, setMessageSearch] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [searching, setSearching] = useState(false);
+
+    // Media upload state
+    const [uploadingMedia, setUploadingMedia] = useState(false);
+
     // Load connected pages
     const loadConnectedPages = useCallback(async () => {
         try {
@@ -268,6 +281,122 @@ export function useFacebookMessenger() {
         }
     }, [selectedConversation, loadMessages]);
 
+    // Send media message
+    const sendMediaMessage = useCallback(async (file, mediaType = 'file') => {
+        if (!selectedConversation || !file) return null;
+
+        try {
+            setUploadingMedia(true);
+
+            await facebookService.sendMediaMessage(
+                selectedConversation.page_id,
+                selectedConversation.participant_id,
+                file,
+                mediaType
+            );
+
+            // Sync and reload messages
+            await facebookService.syncMessages(
+                selectedConversation.conversation_id,
+                selectedConversation.page_id
+            );
+            await loadMessages(selectedConversation.conversation_id);
+
+            return true;
+        } catch (err) {
+            console.error('Error sending media:', err);
+            setError(err.message);
+            return false;
+        } finally {
+            setUploadingMedia(false);
+        }
+    }, [selectedConversation, loadMessages]);
+
+    // Send booking button to contact
+    const sendBookingButton = useCallback(async () => {
+        if (!selectedConversation) return null;
+
+        try {
+            setLoading(true);
+
+            const bookingUrl = `${window.location.origin}/book/${selectedConversation.page_id}?psid=${selectedConversation.participant_id}&name=${encodeURIComponent(selectedConversation.participant_name || '')}`;
+
+            await facebookService.sendBookingButton(
+                selectedConversation.page_id,
+                selectedConversation.participant_id,
+                bookingUrl
+            );
+
+            // Sync and reload
+            await facebookService.syncMessages(
+                selectedConversation.conversation_id,
+                selectedConversation.page_id
+            );
+            await loadMessages(selectedConversation.conversation_id);
+
+            return true;
+        } catch (err) {
+            console.error('Error sending booking button:', err);
+            setError(err.message);
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    }, [selectedConversation, loadMessages]);
+
+    // Load more messages (pagination)
+    const loadMoreMessages = useCallback(async () => {
+        if (!selectedConversation || !hasMoreMessages || loading) return;
+
+        try {
+            setLoading(true);
+            const nextPage = messagePage + 1;
+
+            const result = await facebookService.getMessagesWithPagination(
+                selectedConversation.conversation_id,
+                nextPage
+            );
+
+            setMessages(prev => [...result.messages, ...prev]);
+            setMessagePage(nextPage);
+            setHasMoreMessages(result.hasMore);
+
+            return result;
+        } catch (err) {
+            console.error('Error loading more messages:', err);
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    }, [selectedConversation, hasMoreMessages, loading, messagePage]);
+
+    // Search messages
+    const searchMessagesAction = useCallback(async (searchTerm) => {
+        if (!searchTerm.trim()) {
+            setSearchResults([]);
+            setMessageSearch('');
+            return [];
+        }
+
+        try {
+            setSearching(true);
+            setMessageSearch(searchTerm);
+
+            const results = await facebookService.searchMessages(
+                searchTerm,
+                selectedConversation?.conversation_id // Search in current convo or all
+            );
+
+            setSearchResults(results);
+            return results;
+        } catch (err) {
+            console.error('Error searching messages:', err);
+            return [];
+        } finally {
+            setSearching(false);
+        }
+    }, [selectedConversation]);
+
     // Sync all conversations from Facebook
     const syncAllConversations = useCallback(async () => {
         try {
@@ -452,11 +581,24 @@ export function useFacebookMessenger() {
         analyzing,
         existingClient,
 
+        // Pagination & Search State
+        messagePage,
+        hasMoreMessages,
+        totalMessages,
+        messageSearch,
+        searchResults,
+        searching,
+        uploadingMedia,
+
         // Actions
         loadConversations,
         loadMessages,
         selectConversation,
         sendMessage,
+        sendMediaMessage,
+        sendBookingButton,
+        loadMoreMessages,
+        searchMessages: searchMessagesAction,
         syncAllConversations,
         syncMessages,
         linkToClient,
@@ -474,7 +616,8 @@ export function useFacebookMessenger() {
         bookMeetingFromAI,
 
         // Utilities
-        clearError: () => setError(null)
+        clearError: () => setError(null),
+        clearSearch: () => { setSearchResults([]); setMessageSearch(''); }
     };
 }
 

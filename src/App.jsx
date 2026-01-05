@@ -17,6 +17,7 @@ import LandingPage from './components/LandingPage';
 import ToastContainer from './components/ToastContainer';
 import MeetingRoom from './components/MeetingRoom';
 import MessengerInbox from './components/MessengerInbox';
+import BookingPage from './components/BookingPage';
 import { useSupabase } from './hooks/useSupabase';
 import { useNotifications } from './hooks/useNotifications';
 import { useStorage } from './hooks/useStorage';
@@ -58,25 +59,45 @@ function App() {
     return settings.viewMode || 'kanban';
   }); // 'kanban' or 'table'
 
-  // Check for /room/:slug URL on load
+  // Check for /room/:slug or /book/:pageId URL on load
+  const [showBookingPage, setShowBookingPage] = useState(false);
+
   useEffect(() => {
     const path = window.location.pathname;
+
+    // Meeting room route
     const roomMatch = path.match(/^\/room\/([a-zA-Z0-9]+)$/);
     if (roomMatch) {
       setMeetingRoomSlug(roomMatch[1]);
       setShowMeetingRoom(true);
+      return;
+    }
+
+    // Booking page route
+    const bookMatch = path.match(/^\/book\/([a-zA-Z0-9]+)$/);
+    if (bookMatch) {
+      setShowBookingPage(true);
+      return;
     }
 
     // Listen for popstate (back/forward)
     const handlePopState = () => {
       const newPath = window.location.pathname;
-      const match = newPath.match(/^\/room\/([a-zA-Z0-9]+)$/);
-      if (match) {
-        setMeetingRoomSlug(match[1]);
+      const matchRoom = newPath.match(/^\/room\/([a-zA-Z0-9]+)$/);
+      const matchBook = newPath.match(/^\/book\/([a-zA-Z0-9]+)$/);
+
+      if (matchRoom) {
+        setMeetingRoomSlug(matchRoom[1]);
         setShowMeetingRoom(true);
+        setShowBookingPage(false);
+      } else if (matchBook) {
+        setShowBookingPage(true);
+        setShowMeetingRoom(false);
+        setMeetingRoomSlug(null);
       } else {
         setShowMeetingRoom(false);
         setMeetingRoomSlug(null);
+        setShowBookingPage(false);
       }
     };
     window.addEventListener('popstate', handlePopState);
@@ -642,8 +663,13 @@ function App() {
         </div>
       )}
 
-      {/* Landing page - shown when not logged in AND not in meeting */}
-      {!isLoggedIn && !showMeetingRoom && (
+      {/* Booking Page - Public route /book/:pageId */}
+      {showBookingPage && (
+        <BookingPage />
+      )}
+
+      {/* Landing page - shown when not logged in AND not in meeting AND not booking */}
+      {!isLoggedIn && !showMeetingRoom && !showBookingPage && (
         <LandingPage
           onLogin={() => {
             setIsSignUpMode(false);

@@ -23,14 +23,26 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         analyzeCurrentConversation,
         transferToClient,
         updateExistingLead,
-        bookMeetingFromAI
+        bookMeetingFromAI,
+        // New features
+        sendMediaMessage,
+        sendBookingButton,
+        loadMoreMessages,
+        searchMessages,
+        hasMoreMessages,
+        uploadingMedia,
+        searching,
+        searchResults,
+        clearSearch
     } = useFacebookMessenger();
 
     const [messageText, setMessageText] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [showTransferModal, setShowTransferModal] = useState(false);
     const [editableNotes, setEditableNotes] = useState('');
+    const [showMediaUpload, setShowMediaUpload] = useState(false);
     const messagesEndRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     // Auto-scroll to bottom when messages change
     useEffect(() => {
@@ -54,6 +66,43 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         const success = await sendMessage(messageText);
         if (success) {
             setMessageText('');
+        }
+    };
+
+    // Handle file upload
+    const handleFileUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Check file size (25MB max)
+        const maxSize = 25 * 1024 * 1024;
+        if (file.size > maxSize) {
+            alert('File size exceeds 25MB limit');
+            return;
+        }
+
+        // Determine media type
+        let mediaType = 'file';
+        if (file.type.startsWith('image/')) mediaType = 'image';
+        else if (file.type.startsWith('video/')) mediaType = 'video';
+        else if (file.type.startsWith('audio/')) mediaType = 'audio';
+
+        const success = await sendMediaMessage(file, mediaType);
+        if (success) {
+            setShowMediaUpload(false);
+        }
+
+        // Clear file input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
+    // Handle sending booking button
+    const handleSendBookingButton = async () => {
+        const success = await sendBookingButton();
+        if (!success) {
+            alert('Failed to send booking button. Please try again.');
         }
     };
 
@@ -374,29 +423,76 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                             <div ref={messagesEndRef} />
                         </div>
 
+                        {/* Load More History */}
+                        {hasMoreMessages && (
+                            <div style={{ textAlign: 'center', marginBottom: '0.5rem' }}>
+                                <button
+                                    className="btn btn-sm btn-secondary"
+                                    onClick={loadMoreMessages}
+                                    disabled={loading}
+                                    style={{ opacity: 0.7 }}
+                                >
+                                    {loading ? '⏳ Loading...' : '⬆️ Load earlier messages'}
+                                </button>
+                            </div>
+                        )}
+
                         {/* Message Composer */}
                         <form onSubmit={handleSendMessage} style={{
                             padding: '1rem',
                             borderTop: '1px solid var(--border-color)',
                             display: 'flex',
-                            gap: '0.5rem'
+                            gap: '0.5rem',
+                            flexDirection: 'column'
                         }}>
-                            <input
-                                type="text"
-                                className="form-input"
-                                placeholder="Type a message..."
-                                value={messageText}
-                                onChange={(e) => setMessageText(e.target.value)}
-                                style={{ flex: 1 }}
-                                disabled={loading}
-                            />
-                            <button
-                                type="submit"
-                                className="btn btn-primary"
-                                disabled={loading || !messageText.trim()}
-                            >
-                                {loading ? '⏳' : '📤'}
-                            </button>
+                            {/* Action Buttons Row */}
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                                <button
+                                    type="button"
+                                    className="btn btn-sm btn-secondary"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    disabled={uploadingMedia}
+                                    title="Attach file (max 25MB)"
+                                >
+                                    {uploadingMedia ? '⏳' : '📎'}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-sm btn-secondary"
+                                    onClick={handleSendBookingButton}
+                                    disabled={loading}
+                                    title="Send booking link"
+                                >
+                                    📅
+                                </button>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    style={{ display: 'none' }}
+                                    onChange={handleFileUpload}
+                                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx"
+                                />
+                            </div>
+
+                            {/* Message Input Row */}
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <input
+                                    type="text"
+                                    className="form-input"
+                                    placeholder="Type a message..."
+                                    value={messageText}
+                                    onChange={(e) => setMessageText(e.target.value)}
+                                    style={{ flex: 1 }}
+                                    disabled={loading}
+                                />
+                                <button
+                                    type="submit"
+                                    className="btn btn-primary"
+                                    disabled={loading || !messageText.trim()}
+                                >
+                                    {loading ? '⏳' : '📤'}
+                                </button>
+                            </div>
                         </form>
                     </>
                 ) : (

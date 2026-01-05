@@ -452,6 +452,184 @@ class FacebookService {
     }
 
     /**
+     * Send media attachment via Facebook Graph API
+     * @param {string} pageId - Page ID
+     * @param {string} recipientId - Recipient PSID
+     * @param {File} file - File to upload (max 25MB)
+     * @param {string} mediaType - 'image', 'video', 'audio', or 'file'
+     */
+    async sendMediaMessage(pageId, recipientId, file, mediaType = 'file') {
+        try {
+            // Validate file size (25MB max)
+            const maxSize = 25 * 1024 * 1024;
+            if (file.size > maxSize) {
+                throw new Error('File size exceeds 25MB limit');
+            }
+
+            // Get page access token
+            const pages = await this.getConnectedPages();
+            const page = pages.find(p => p.page_id === pageId);
+            if (!page) throw new Error('Page not found');
+
+            // First, upload the file to Facebook
+            const formData = new FormData();
+            formData.append('message', JSON.stringify({
+                attachment: {
+                    type: mediaType,
+                    payload: { is_reusable: true }
+                }
+            }));
+            formData.append('filedata', file);
+
+            const uploadResponse = await fetch(
+                `${GRAPH_API_BASE}/me/message_attachments?access_token=${page.page_access_token}`,
+                {
+                    method: 'POST',
+                    body: formData
+                }
+            );
+
+            if (!uploadResponse.ok) {
+                const errorData = await uploadResponse.json();
+                throw new Error(errorData.error?.message || 'Failed to upload media');
+            }
+
+            const uploadData = await uploadResponse.json();
+            const attachmentId = uploadData.attachment_id;
+
+            // Send the attachment to the recipient
+            const sendResponse = await fetch(
+                `${GRAPH_API_BASE}/${pageId}/messages?access_token=${page.page_access_token}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        recipient: { id: recipientId },
+                        message: {
+                            attachment: {
+                                type: mediaType,
+                                payload: { attachment_id: attachmentId }
+                            }
+                        }
+                    })
+                }
+            );
+
+            if (!sendResponse.ok) {
+                const errorData = await sendResponse.json();
+                throw new Error(errorData.error?.message || 'Failed to send media');
+            }
+
+            return await sendResponse.json();
+        } catch (error) {
+            console.error('Error sending media message:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Search messages in a conversation or across all conversations
+     */
+    async searchMessages(searchTerm, conversationId = null) {
+        try {
+            let query = getSupabase()
+                .from('facebook_messages')
+                .select('*, conversation:conversation_id(participant_name)')
+                .ilike('message_text', `%${searchTerm}%`)
+                .order('timestamp', { ascending: false })
+                .limit(50);
+
+            if (conversationId) {
+                query = query.eq('conversation_id', conversationId);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+            return data || [];
+        } catch (error) {
+            console.error('Error searching messages:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Get messages with pagination for loading history
+     */
+    async getMessagesWithPagination(conversationId, page = 1, limit = 50) {
+        try {
+            const offset = (page - 1) * limit;
+
+            const { data, error, count } = await getSupabase()
+                .from('facebook_messages')
+                .select('*', { count: 'exact' })
+                .eq('conversation_id', conversationId)
+                .order('timestamp', { ascending: false })
+                .range(offset, offset + limit - 1);
+
+            if (error) throw error;
+
+            return {
+                messages: (data || []).reverse(), // Reverse to show oldest first
+                total: count || 0,
+                page,
+                hasMore: (offset + limit) < (count || 0)
+            };
+        } catch (error) {
+            console.error('Error fetching paginated messages:', error);
+            return { messages: [], total: 0, page: 1, hasMore: false };
+        }
+    }
+
+    /**
+     * Send "Book Appointment" button template
+     */
+    async sendBookingButton(pageId, recipientId, bookingUrl) {
+        try {
+            const pages = await this.getConnectedPages();
+            const page = pages.find(p => p.page_id === pageId);
+            if (!page) throw new Error('Page not found');
+
+            const response = await fetch(
+                `${GRAPH_API_BASE}/${pageId}/messages?access_token=${page.page_access_token}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        recipient: { id: recipientId },
+                        message: {
+                            attachment: {
+                                type: 'template',
+                                payload: {
+                                    template_type: 'button',
+                                    text: '📅 Book an Appointment\nChoose a convenient date and time that works for you. Click below to view available slots.',
+                                    buttons: [{
+                                        type: 'web_url',
+                                        url: bookingUrl,
+                                        title: '📆 Book Now',
+                                        webview_height_ratio: 'tall',
+                                        messenger_extensions: false
+                                    }]
+                                }
+                            }
+                        }
+                    })
+                }
+            );
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error?.message || 'Failed to send booking button');
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error('Error sending booking button:', error);
+            throw error;
+        }
+    }
+
+
+    /**
      * Save AI analysis results to conversation
      */
     async saveAIAnalysis(conversationId, analysis) {
