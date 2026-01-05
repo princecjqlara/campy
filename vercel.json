@@ -5,7 +5,7 @@
             "destination": "/index.html"
         },
         {
-            "source": "/((?!assets|favicon|.*\\..*).*)",
+            "source": "/((?!api|assets|favicon|.*\\..*).*)",
             "destination": "/index.html"
         }
     ]
