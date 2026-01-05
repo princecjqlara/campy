@@ -17,17 +17,23 @@ body {
 }
 
 /* Custom scrollbar styling */
+.custom-scrollbar {
+  overflow-y: scroll !important;
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 8px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: var(--primary);
   border-radius: 4px;
+  min-height: 40px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
@@ -35,15 +41,21 @@ body {
 }
 
 /* Messages scrollbar */
+.messages-scrollbar {
+  overflow-y: scroll !important;
+}
+
 .messages-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
 
 .messages-scrollbar::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
 }
 
 .messages-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(124, 58, 237, 0.5);
+  background: var(--primary);
   border-radius: 3px;
+  min-height: 30px;
 }

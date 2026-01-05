@@ -164,22 +164,43 @@ export function useFacebookMessenger() {
         setSelectedConversation(conversation);
         setAiAnalysis(null);
         setExistingClient(null);
+        setMessages([]); // Clear old messages immediately
 
         if (conversation) {
-            const msgs = await loadMessages(conversation.conversation_id);
+            try {
+                setLoading(true);
 
-            // Load existing AI analysis if available
-            const savedAnalysis = await facebookService.getAIAnalysis(conversation.conversation_id);
-            if (savedAnalysis?.ai_analysis && Object.keys(savedAnalysis.ai_analysis).length > 0) {
-                setAiAnalysis(savedAnalysis.ai_analysis);
+                // First, sync messages from Facebook to get the latest
+                await facebookService.syncMessages(
+                    conversation.conversation_id,
+                    conversation.page_id
+                );
+
+                // Then load messages from database
+                const msgs = await facebookService.getMessages(conversation.conversation_id);
+                setMessages(msgs);
+
+                // Mark messages as read
+                await facebookService.markMessagesAsRead(conversation.conversation_id);
+
+                // Load existing AI analysis if available
+                const savedAnalysis = await facebookService.getAIAnalysis(conversation.conversation_id);
+                if (savedAnalysis?.ai_analysis && Object.keys(savedAnalysis.ai_analysis).length > 0) {
+                    setAiAnalysis(savedAnalysis.ai_analysis);
+                }
+
+                // Check for existing client
+                await checkExistingClient(conversation.participant_name, savedAnalysis?.extracted_details);
+            } catch (err) {
+                console.error('Error loading conversation:', err);
+                setError(err.message);
+            } finally {
+                setLoading(false);
             }
-
-            // Check for existing client
-            await checkExistingClient(conversation.participant_name, savedAnalysis?.extracted_details);
         } else {
             setMessages([]);
         }
-    }, [loadMessages, checkExistingClient]);
+    }, [checkExistingClient]);
 
     // Analyze current conversation with AI
     const analyzeCurrentConversation = useCallback(async () => {
