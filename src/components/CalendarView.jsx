@@ -122,7 +122,7 @@ const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName
     setEvents(prev => prev.filter(e => e.id !== id)); setShowMeetingDetails(false);
   };
 
-  // Bulk delete selected events
+  // Bulk delete selected events using API (bypasses RLS)
   const handleBulkDelete = async () => {
     const idsToDelete = Array.from(selectedEvents).filter(id => !id.startsWith?.('payment-'));
     if (idsToDelete.length === 0) {
@@ -133,19 +133,27 @@ const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName
 
     setDeleting(true);
     try {
-      const client = getSupabaseClient();
-      if (client) {
-        for (const id of idsToDelete) {
-          await client.from('calendar_events').delete().eq('id', id);
-        }
+      // Use API endpoint which has service role key to bypass RLS
+      const response = await fetch('/api/calendar/events', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: idsToDelete })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Delete failed');
       }
+
+      console.log('✅ Bulk delete successful:', result);
       setEvents(prev => prev.filter(e => !selectedEvents.has(e.id)));
       setSelectedEvents(new Set());
       setBulkSelectMode(false);
       alert(`Deleted ${idsToDelete.length} meeting(s)`);
     } catch (e) {
       console.error('Bulk delete error:', e);
-      alert('Error deleting meetings');
+      alert('Error deleting meetings: ' + e.message);
     } finally {
       setDeleting(false);
     }

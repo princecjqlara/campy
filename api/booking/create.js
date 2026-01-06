@@ -246,9 +246,8 @@ export default async function handler(req, res) {
                 start_time: startTime.toISOString(),
                 end_time: endTime.toISOString(),
                 type: 'meeting',
-                description: eventDescription.trim(),
+                description: eventDescription.trim() + `\n\n🔗 Booking ID: ${data?.id || 'N/A'}`,
                 all_day: false,
-                booking_id: data?.id,
                 created_at: new Date().toISOString()
             };
 
