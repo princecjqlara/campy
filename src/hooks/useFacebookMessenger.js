@@ -697,13 +697,29 @@ export function useFacebookMessenger() {
             conversationSubscription = facebookService.subscribeToConversations((payload) => {
                 console.log('Conversation updated:', payload);
 
-                // Update the conversation in-place instead of reloading all
                 if (payload.new) {
-                    setConversations(prev => prev.map(conv =>
-                        conv.conversation_id === payload.new.conversation_id
-                            ? { ...conv, ...payload.new }
-                            : conv
-                    ));
+                    setConversations(prev => {
+                        // Check if conversation already exists in the list
+                        const existingIndex = prev.findIndex(
+                            conv => conv.conversation_id === payload.new.conversation_id
+                        );
+
+                        if (existingIndex >= 0) {
+                            // Update existing conversation and move to top
+                            const updated = [...prev];
+                            updated[existingIndex] = { ...updated[existingIndex], ...payload.new };
+                            // Move to top if it has a new message
+                            if (payload.eventType === 'INSERT' || payload.new.last_message_time) {
+                                const [movedConv] = updated.splice(existingIndex, 1);
+                                return [movedConv, ...updated];
+                            }
+                            return updated;
+                        } else {
+                            // NEW conversation - add to the top of the list
+                            console.log('Adding new conversation to list:', payload.new.conversation_id);
+                            return [payload.new, ...prev];
+                        }
+                    });
                 }
             });
         };
