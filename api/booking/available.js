@@ -26,7 +26,7 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    const { pageId, date } = req.query;
+    const { pageId, date, start_time, end_time, slot_duration, min_advance_hours } = req.query;
 
     if (!pageId || !date) {
         return res.status(400).json({ error: 'pageId and date are required' });
@@ -35,14 +35,30 @@ export default async function handler(req, res) {
     // Check if Supabase is configured
     if (!supabaseUrl || !supabaseKey) {
         console.log('Supabase not configured, generating default slots');
-        return res.status(200).json({ slots: generateSlots(DEFAULT_CONFIG, date, []) });
+        // Use query params if provided
+        const configFromParams = {
+            ...DEFAULT_CONFIG,
+            start_time: start_time || DEFAULT_CONFIG.start_time,
+            end_time: end_time || DEFAULT_CONFIG.end_time,
+            slot_duration: parseInt(slot_duration) || DEFAULT_CONFIG.slot_duration,
+            min_advance_hours: parseInt(min_advance_hours) || 1
+        };
+        return res.status(200).json({ slots: generateSlots(configFromParams, date, []) });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     try {
-        // Get settings (handle table not existing)
-        let config = DEFAULT_CONFIG;
+        // Start with default config, then override with query params (from frontend localStorage)
+        let config = {
+            ...DEFAULT_CONFIG,
+            start_time: start_time || DEFAULT_CONFIG.start_time,
+            end_time: end_time || DEFAULT_CONFIG.end_time,
+            slot_duration: parseInt(slot_duration) || DEFAULT_CONFIG.slot_duration,
+            min_advance_hours: parseInt(min_advance_hours) || 1
+        };
+
+        // Try to get settings from database (lowest priority - query params override)
         try {
             const { data: settings, error } = await supabase
                 .from('booking_settings')
@@ -51,10 +67,16 @@ export default async function handler(req, res) {
                 .single();
 
             if (!error && settings) {
-                config = settings;
+                // Only use DB values if query params weren't provided
+                if (!start_time) config.start_time = settings.start_time || config.start_time;
+                if (!end_time) config.end_time = settings.end_time || config.end_time;
+                if (!slot_duration) config.slot_duration = settings.slot_duration || config.slot_duration;
+                if (!min_advance_hours) config.min_advance_hours = settings.min_advance_hours || config.min_advance_hours;
+                config.available_days = settings.available_days;
+                config.working_days = settings.working_days;
             }
         } catch (e) {
-            console.log('Could not fetch settings, using defaults');
+            console.log('Could not fetch settings from DB, using params/defaults');
         }
 
         // Check if date is a working day - support both available_days (numeric) and working_days (string)
@@ -139,10 +161,14 @@ function generateSlots(config, date, bookedTimes) {
     const endHour = parseInt(endParts[0]);
     const endMinute = parseInt(endParts[1] || 0);
 
-    // Check if date is in the past
+    // Check if date is today - apply min_advance_hours buffer
     const now = new Date();
     const dateObj = new Date(date);
     const isToday = dateObj.toDateString() === now.toDateString();
+
+    // Calculate minimum booking time (now + min_advance_hours)
+    const minAdvanceHours = config.min_advance_hours || 1;
+    const minBookingTime = new Date(now.getTime() + (minAdvanceHours * 60 * 60 * 1000));
 
     while (currentHour < endHour || (currentHour === endHour && currentMinute < endMinute)) {
         const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
@@ -158,11 +184,12 @@ function generateSlots(config, date, bookedTimes) {
             continue;
         }
 
-        // Skip if time has passed (for today)
+        // Skip if time hasn't met the minimum advance booking requirement (for today)
         if (isToday) {
             const slotTime = new Date(date);
             slotTime.setHours(currentHour, currentMinute, 0, 0);
-            if (slotTime <= now) {
+            // Must be at least min_advance_hours from now
+            if (slotTime <= minBookingTime) {
                 currentMinute += duration;
                 while (currentMinute >= 60) {
                     currentMinute -= 60;

@@ -154,7 +154,16 @@ const BookingPage = () => {
     const loadAvailableSlots = async (date) => {
         try {
             const dateStr = date.toISOString().split('T')[0];
-            const response = await fetch(`/api/booking/available?pageId=${pageId}&date=${dateStr}`);
+            // Pass settings to API for proper slot generation
+            const params = new URLSearchParams({
+                pageId: pageId,
+                date: dateStr,
+                start_time: settings?.start_time || '09:00',
+                end_time: settings?.end_time || '17:00',
+                slot_duration: settings?.slot_duration || 60,
+                min_advance_hours: settings?.min_advance_hours || 1
+            });
+            const response = await fetch(`/api/booking/available?${params}`);
             if (!response.ok) throw new Error('Failed to load slots');
             const data = await response.json();
             setAvailableSlots(data.slots || []);
