@@ -161,14 +161,10 @@ function generateSlots(config, date, bookedTimes) {
     const endHour = parseInt(endParts[0]);
     const endMinute = parseInt(endParts[1] || 0);
 
-    // Calculate minimum booking time (now + min_advance_hours)
-    // This applies to ALL dates, not just today
-    // If admin sets 24 hours, contacts cannot book anything within the next 24 hours
+    // Only filter past times for today - no advance booking restrictions
     const now = new Date();
-    const minAdvanceHours = config.min_advance_hours || 1;
-    const minBookingTime = new Date(now.getTime() + (minAdvanceHours * 60 * 60 * 1000));
-
-    console.log(`[SLOTS] min_advance_hours: ${minAdvanceHours}, minBookingTime: ${minBookingTime.toISOString()}`);
+    const dateObj = new Date(date);
+    const isToday = dateObj.toDateString() === now.toDateString();
 
     while (currentHour < endHour || (currentHour === endHour && currentMinute < endMinute)) {
         const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
@@ -184,19 +180,18 @@ function generateSlots(config, date, bookedTimes) {
             continue;
         }
 
-        // Create a full datetime for this slot
-        const slotDateTime = new Date(date);
-        slotDateTime.setHours(currentHour, currentMinute, 0, 0);
-
-        // Skip if slot is within the min_advance_hours window from now
-        // This ensures contacts cannot book slots that are too soon
-        if (slotDateTime <= minBookingTime) {
-            currentMinute += duration;
-            while (currentMinute >= 60) {
-                currentMinute -= 60;
-                currentHour += 1;
+        // Skip past times for today only
+        if (isToday) {
+            const slotDateTime = new Date(date);
+            slotDateTime.setHours(currentHour, currentMinute, 0, 0);
+            if (slotDateTime <= now) {
+                currentMinute += duration;
+                while (currentMinute >= 60) {
+                    currentMinute -= 60;
+                    currentHour += 1;
+                }
+                continue;
             }
-            continue;
         }
 
         slots.push(timeStr);

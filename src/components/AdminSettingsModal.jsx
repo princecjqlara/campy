@@ -1130,26 +1130,6 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
                     </small>
                   </div>
 
-                  {/* Minimum Advance Booking Hours */}
-                  <div className="form-group" style={{ marginBottom: '1rem' }}>
-                    <label className="form-label">Minimum Advance Booking Time</label>
-                    <select
-                      className="form-select"
-                      value={bookingSettings.min_advance_hours || 1}
-                      onChange={(e) => setBookingSettings(prev => ({ ...prev, min_advance_hours: parseInt(e.target.value) }))}
-                    >
-                      <option value="0">No minimum (allow immediate)</option>
-                      <option value="1">1 hour before</option>
-                      <option value="2">2 hours before</option>
-                      <option value="3">3 hours before</option>
-                      <option value="4">4 hours before</option>
-                      <option value="24">24 hours (next day only)</option>
-                    </select>
-                    <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                      How much advance notice is required for bookings (e.g., 2 hours = can book 10 AM at 8 AM)
-                    </small>
-                  </div>
-
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{
                       display: 'flex',
