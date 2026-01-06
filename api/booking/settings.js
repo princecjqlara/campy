@@ -92,34 +92,32 @@ export default async function handler(req, res) {
             const settings = req.body;
             console.log('Received booking settings to save:', JSON.stringify(settings, null, 2));
 
-            // Core settings that should always exist in the table
-            const coreSettings = {
+            // Minimal settings that MUST exist in original schema
+            const minimalSettings = {
                 page_id: pageId,
-                available_days: settings.available_days || [1, 2, 3, 4, 5],
                 start_time: settings.start_time || '09:00',
                 end_time: settings.end_time || '17:00',
                 slot_duration: settings.slot_duration || 30,
+                custom_fields: settings.custom_fields || [],
+                custom_form: settings.custom_form || [],
                 updated_at: new Date().toISOString()
             };
 
-            // Extended settings - only include if they have values
-            // These may not exist in older DB schemas
+            // Extended settings - may not exist in all DB schemas
             const extendedSettings = {};
-
+            if (settings.available_days !== undefined) extendedSettings.available_days = settings.available_days;
             if (settings.same_day_buffer !== undefined) extendedSettings.same_day_buffer = settings.same_day_buffer;
             if (settings.min_advance_hours !== undefined) extendedSettings.min_advance_hours = settings.min_advance_hours;
             if (settings.booking_mode !== undefined) extendedSettings.booking_mode = settings.booking_mode;
             if (settings.allow_next_hour !== undefined) extendedSettings.allow_next_hour = settings.allow_next_hour;
-            if (settings.custom_fields !== undefined) extendedSettings.custom_fields = settings.custom_fields;
-            if (settings.custom_form !== undefined) extendedSettings.custom_form = settings.custom_form;
             if (settings.confirmation_message !== undefined) extendedSettings.confirmation_message = settings.confirmation_message;
             if (settings.messenger_prefill_message !== undefined) extendedSettings.messenger_prefill_message = settings.messenger_prefill_message;
             if (settings.auto_redirect_enabled !== undefined) extendedSettings.auto_redirect_enabled = settings.auto_redirect_enabled;
             if (settings.auto_redirect_delay !== undefined) extendedSettings.auto_redirect_delay = settings.auto_redirect_delay;
 
-            // Try to save all settings
-            let dbSettings = { ...coreSettings, ...extendedSettings };
-            console.log('Saving to database:', JSON.stringify(dbSettings, null, 2));
+            // Try to save all settings first
+            let dbSettings = { ...minimalSettings, ...extendedSettings };
+            console.log('Attempt 1 - Saving all settings:', Object.keys(dbSettings));
 
             let { data, error } = await supabase
                 .from('booking_settings')
@@ -127,25 +125,26 @@ export default async function handler(req, res) {
                 .select()
                 .single();
 
-            // If column not found, try with just core settings
-            if (error && error.code === 'PGRST204') {
-                console.log('Some columns missing, trying core settings only');
-                const { data: coreData, error: coreError } = await supabase
+            // If column not found, try with just minimal settings (includes custom_fields)
+            if (error && (error.code === 'PGRST204' || error.message?.includes('column'))) {
+                console.log('Some columns missing, trying minimal settings:', error.message);
+                const { data: minData, error: minError } = await supabase
                     .from('booking_settings')
-                    .upsert(coreSettings, { onConflict: 'page_id' })
+                    .upsert(minimalSettings, { onConflict: 'page_id' })
                     .select()
                     .single();
 
-                if (!coreError) {
+                if (!minError) {
+                    console.log('Minimal settings saved successfully');
                     // Return what we could save, merged with what was requested
                     return res.status(200).json({
                         ...settings,
-                        ...coreData,
-                        _warning: 'Some settings could not be saved - database migration needed'
+                        ...minData,
+                        _warning: 'Some settings could not be saved - run database migration'
                     });
                 }
-                error = coreError;
-                data = coreData;
+                error = minError;
+                data = minData;
             }
 
             if (error) {
