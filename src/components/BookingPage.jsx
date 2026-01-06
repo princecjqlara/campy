@@ -253,14 +253,14 @@ const BookingPage = () => {
                         {settings?.confirmation_message || 'Your booking has been confirmed! We look forward to meeting with you.'}
                     </p>
 
-                    {/* Messenger Redirect Button */}
+                    {/* Messenger Button - Optional, booking already confirmed */}
                     <a
                         href={messengerUrl}
                         style={styles.messengerButton}
                         target="_blank"
                         rel="noopener noreferrer"
                     >
-                        💬 Confirm in Messenger
+                        💬 Chat with Us on Messenger
                         {redirectCountdown !== null && redirectCountdown > 0 && (
                             <span style={styles.countdown}> ({redirectCountdown}s)</span>
                         )}
@@ -269,7 +269,7 @@ const BookingPage = () => {
                     <p style={styles.redirectNote}>
                         {redirectCountdown !== null && redirectCountdown > 0
                             ? `Redirecting to Messenger in ${redirectCountdown} seconds...`
-                            : 'Click the button above to confirm your booking in Messenger'}
+                            : 'Your booking is confirmed! You can optionally send us a message above.'}
                     </p>
 
                     <button

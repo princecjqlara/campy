@@ -861,8 +861,7 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
                   💡 How it works
                 </div>
                 <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  After a contact books an appointment, they will see the confirmation message and a "Confirm in Messenger" button.
-                  The button opens Facebook Messenger with your pre-filled message, allowing the contact to send it to you as confirmation.
+                  When a contact books an appointment, it is <strong>automatically confirmed</strong>. They will see a success message with a "Chat with Us" button that opens Messenger with a pre-filled message - this is for optional follow-up contact only, not required for confirmation.
                 </p>
               </div>
             </div>
