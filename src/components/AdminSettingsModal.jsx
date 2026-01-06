@@ -133,29 +133,42 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
 
         // Load booking settings - try localStorage first, then API
         try {
-          // Check localStorage first
+          // Check localStorage first (this is the source of truth after save)
           const localSettings = localStorage.getItem('booking_settings');
           if (localSettings) {
             const parsed = JSON.parse(localSettings);
             setBookingSettings(prev => ({ ...prev, ...parsed }));
-            console.log('Loaded booking settings from localStorage');
+            console.log('Loaded booking settings from localStorage:', parsed);
           }
 
-          // Also try API (will override localStorage if successful)
-          const response = await fetch('/api/booking/settings?pageId=default');
-          if (response.ok) {
-            const data = await response.json();
-            if (!data.message?.includes('pending migration')) {
-              setBookingSettings(prev => ({
-                ...prev,
-                ...data,
-                available_days: data.available_days || prev.available_days,
-                custom_fields: data.custom_fields || prev.custom_fields
-              }));
+          // Also try API (only override if it returns complete data)
+          try {
+            const response = await fetch('/api/booking/settings?pageId=default');
+            if (response.ok) {
+              const data = await response.json();
+              console.log('API booking settings response:', data);
+              // Only use API data if it has real settings (not empty/error)
+              if (!data.message?.includes('pending migration') && !data.error && data.available_days) {
+                setBookingSettings(prev => ({
+                  ...prev,
+                  ...data,
+                  available_days: data.available_days || prev.available_days,
+                  start_time: data.start_time || prev.start_time,
+                  end_time: data.end_time || prev.end_time,
+                  slot_duration: data.slot_duration || prev.slot_duration,
+                  booking_mode: data.booking_mode || prev.booking_mode,
+                  custom_fields: data.custom_fields || prev.custom_fields
+                }));
+                console.log('Applied API settings over localStorage');
+              } else {
+                console.log('API returned incomplete data, keeping localStorage settings');
+              }
             }
+          } catch (apiErr) {
+            console.log('API error, using localStorage settings');
           }
         } catch (e) {
-          console.log('Could not load booking settings from API:', e);
+          console.log('Could not load booking settings:', e);
         }
       } catch (error) {
         console.error('Error loading settings:', error);
