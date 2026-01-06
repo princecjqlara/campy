@@ -120,6 +120,7 @@ async function handleIncomingMessage(pageId, event) {
         const newUnreadCount = (existingConv?.unread_count || 0) + 1;
 
         // Upsert conversation
+        // Use participant_id + page_id as conflict key to prevent duplicate contacts
         const { error: convError } = await db
             .from('facebook_conversations')
             .upsert({
@@ -133,7 +134,7 @@ async function handleIncomingMessage(pageId, event) {
                 unread_count: newUnreadCount,
                 updated_at: new Date().toISOString()
             }, {
-                onConflict: 'conversation_id',
+                onConflict: 'participant_id,page_id',
                 ignoreDuplicates: false
             });
 

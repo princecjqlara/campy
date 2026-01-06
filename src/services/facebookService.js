@@ -19,6 +19,24 @@ const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 class FacebookService {
     /**
+     * Check if a conversation ID was created by webhook (not from Facebook sync)
+     * Webhook-created conversations have temporary IDs like "t_123456789"
+     * where the number is just the participant_id, not a real Facebook thread ID
+     * Real Facebook thread IDs look like "t_12345678901234567890" (longer format)
+     */
+    isWebhookCreatedConversation(conversationId) {
+        if (!conversationId) return false;
+        // Webhook creates IDs like "t_" + senderId (participant_id)
+        // Real FB thread IDs are longer and have different format
+        // If it starts with "t_" and is followed by a shorter numeric ID, it's likely webhook-created
+        const match = conversationId.match(/^t_(\d+)$/);
+        if (!match) return false;
+        // Facebook PSIDs are typically 15-17 digits, thread IDs are different
+        // If the ID portion is under 18 digits and all numeric, likely a webhook temp ID
+        return match[1].length < 18;
+    }
+
+    /**
      * Get Facebook settings from database
      */
     async getSettings() {
@@ -358,6 +376,15 @@ class FacebookService {
      */
     async syncMessages(conversationId, pageId) {
         try {
+            // Skip syncing for webhook-created temporary conversations
+            // These have IDs like "t_123456789" where the number is the participant_id
+            // They don't exist on Facebook's Graph API
+            if (this.isWebhookCreatedConversation(conversationId)) {
+                console.log(`[SYNC] Skipping Facebook sync for webhook-created conversation: ${conversationId}`);
+                // Just return messages from database
+                return await this.getMessages(conversationId);
+            }
+
             // Get page access token
             const pages = await this.getConnectedPages();
             const page = pages.find(p => p.page_id === pageId);
