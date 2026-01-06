@@ -196,13 +196,19 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
 
       // Save booking settings
       try {
-        await fetch('/api/booking/settings?pageId=default', {
+        console.log('Saving booking settings:', bookingSettings);
+        const bookingResponse = await fetch('/api/booking/settings?pageId=default', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(bookingSettings)
         });
+        const bookingResult = await bookingResponse.json();
+        console.log('Booking settings save result:', bookingResult);
+        if (!bookingResponse.ok) {
+          console.error('Failed to save booking settings:', bookingResult);
+        }
       } catch (e) {
-        console.log('Could not save booking settings:', e);
+        console.error('Could not save booking settings:', e);
       }
 
       setMessage({ type: 'success', text: 'Settings saved successfully! Page will reload in 1 second...' });

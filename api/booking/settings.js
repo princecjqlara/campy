@@ -79,18 +79,34 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
         try {
             const settings = req.body;
+            console.log('Received booking settings to save:', JSON.stringify(settings, null, 2));
+
+            // Map settings to database columns
+            const dbSettings = {
+                page_id: pageId,
+                available_days: settings.available_days || [1, 2, 3, 4, 5],
+                start_time: settings.start_time || '09:00',
+                end_time: settings.end_time || '17:00',
+                slot_duration: settings.slot_duration || 30,
+                custom_fields: settings.custom_fields || [],
+                custom_form: settings.custom_form || [],
+                confirmation_message: settings.confirmation_message || '',
+                messenger_prefill_message: settings.messenger_prefill_message || '',
+                auto_redirect_enabled: settings.auto_redirect_enabled !== false,
+                auto_redirect_delay: settings.auto_redirect_delay || 5,
+                updated_at: new Date().toISOString()
+            };
+
+            console.log('Saving to database:', JSON.stringify(dbSettings, null, 2));
 
             const { data, error } = await supabase
                 .from('booking_settings')
-                .upsert({
-                    page_id: pageId,
-                    ...settings,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'page_id' })
+                .upsert(dbSettings, { onConflict: 'page_id' })
                 .select()
                 .single();
 
             if (error) {
+                console.error('Supabase error:', error);
                 if (error.code === '42P01' || error.message?.includes('does not exist')) {
                     return res.status(200).json({
                         message: 'Settings saved (table pending migration)',
@@ -100,10 +116,11 @@ export default async function handler(req, res) {
                 throw error;
             }
 
+            console.log('Saved successfully:', data);
             return res.status(200).json(data);
         } catch (error) {
             console.error('Error saving booking settings:', error);
-            return res.status(500).json({ error: 'Failed to save settings' });
+            return res.status(500).json({ error: 'Failed to save settings', details: error.message });
         }
     }
 
