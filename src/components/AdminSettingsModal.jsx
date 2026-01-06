@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import TagManagementModal from './TagManagementModal';
 import EmployeeSalaryManagement from './EmployeeSalaryManagement';
+import facebookService from '../services/facebookService';
 
 const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, saveAIPrompts, getPackagePrices, savePackagePrices, getPackageDetails, savePackageDetails, onTeamPerformance }) => {
   const [showTagManagement, setShowTagManagement] = useState(false);
   const [activeMainTab, setActiveMainTab] = useState('packages'); // packages, employees, facebook, booking
+  const [activePageId, setActivePageId] = useState('default'); // Will be set from connected pages
 
-  // Get the active Facebook page ID from localStorage (connected pages stored there)
+  // Get the active Facebook page ID - use state if available, otherwise fallback to localStorage/default
   const getActivePageId = () => {
+    if (activePageId && activePageId !== 'default') {
+      return activePageId;
+    }
     try {
       const pages = localStorage.getItem('connected_facebook_pages');
       if (pages) {
@@ -16,7 +21,6 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
           return parsed[0].id || parsed[0].page_id || 'default';
         }
       }
-      // Try alternative storage
       const selectedPage = localStorage.getItem('selectedPageId');
       if (selectedPage) return selectedPage;
     } catch (e) {
@@ -141,6 +145,21 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
     const loadSettings = async () => {
       try {
         setLoading(true);
+
+        // First, get connected Facebook pages to get the actual page ID
+        try {
+          const connectedPages = await facebookService.getConnectedPages();
+          if (connectedPages && connectedPages.length > 0) {
+            const pageId = connectedPages[0].page_id || connectedPages[0].id;
+            console.log('Found connected Facebook page:', pageId);
+            setActivePageId(pageId);
+            // Store in localStorage for backup
+            localStorage.setItem('selectedPageId', pageId);
+          }
+        } catch (pageErr) {
+          console.log('Could not fetch connected pages:', pageErr);
+        }
+
         const loadedPrices = await getPackagePrices();
         const loadedExpenses = await getExpenses();
         const loadedPrompts = await getAIPrompts();
