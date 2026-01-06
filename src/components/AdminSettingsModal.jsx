@@ -828,6 +828,52 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
 
           {activeMainTab === 'booking' && (
             <div>
+              {/* Preview Button */}
+              <div style={{ marginBottom: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => window.open('/booking?pageId=default', '_blank')}
+                  style={{
+                    padding: '0.75rem 1.5rem',
+                    background: 'linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}
+                >
+                  👁️ Preview Booking Page
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `${window.location.origin}/booking?pageId=default`;
+                    navigator.clipboard.writeText(url);
+                    alert('Booking page URL copied to clipboard!');
+                  }}
+                  style={{
+                    padding: '0.75rem 1.5rem',
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}
+                >
+                  📋 Copy Booking Link
+                </button>
+              </div>
+
               <div style={{ marginBottom: '2rem' }}>
                 <h4 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>📅 Booking Confirmation Settings</h4>
                 <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
