@@ -245,10 +245,9 @@ export default async function handler(req, res) {
                 title: `📅 Booking: ${contactName}`,
                 start_time: startTime.toISOString(),
                 end_time: endTime.toISOString(),
-                type: 'meeting',
+                event_type: 'meeting',
                 description: eventDescription.trim() + `\n\n🔗 Booking ID: ${data?.id || 'N/A'}`,
-                all_day: false,
-                created_at: new Date().toISOString()
+                all_day: false
             };
 
             console.log('Creating calendar event:', calendarEvent.title);
