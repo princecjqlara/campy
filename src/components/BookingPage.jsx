@@ -415,43 +415,59 @@ const BookingPage = () => {
                     <div style={styles.slotsSection}>
                         <h3 style={styles.slotsTitle}>🕐 Available Times</h3>
 
-                        {/* Next Hour Quick Book Option */}
-                        {settings?.allow_next_hour && selectedDate && (
-                            <button
-                                style={{
-                                    width: '100%',
-                                    padding: '0.75rem',
-                                    marginBottom: '1rem',
-                                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                                    color: 'white',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    fontSize: '0.95rem',
-                                    fontWeight: '600',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    gap: '0.5rem'
-                                }}
-                                onClick={() => {
-                                    const now = new Date();
-                                    const nextHour = new Date(now);
-                                    nextHour.setHours(nextHour.getHours() + 1);
-                                    nextHour.setMinutes(0);
-                                    const timeStr = `${String(nextHour.getHours()).padStart(2, '0')}:${String(nextHour.getMinutes()).padStart(2, '0')}`;
-                                    setSelectedTime(timeStr);
-                                    setSelectedDate(new Date());
-                                }}
-                            >
-                                ⚡ Book Next Hour ({(() => {
-                                    const next = new Date();
-                                    next.setHours(next.getHours() + 1);
-                                    next.setMinutes(0);
-                                    return next.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-                                })()})
-                            </button>
-                        )}
+                        {/* Next Hour Quick Book Option - shows when enabled and it's within working hours */}
+                        {settings?.allow_next_hour && (() => {
+                            const now = new Date();
+                            const nextHour = new Date(now);
+                            const minAdvance = settings?.min_advance_hours || 1;
+                            nextHour.setHours(nextHour.getHours() + minAdvance);
+                            nextHour.setMinutes(0);
+
+                            const startTimeParts = (settings?.start_time || '09:00').split(':');
+                            const endTimeParts = (settings?.end_time || '17:00').split(':');
+                            const startHour = parseInt(startTimeParts[0]);
+                            const endHour = parseInt(endTimeParts[0]);
+                            const nextHourValue = nextHour.getHours();
+
+                            // Only show if next hour is within working hours
+                            const isWithinWorkingHours = nextHourValue >= startHour && nextHourValue < endHour;
+
+                            // Check if today is a working day
+                            const dayOfWeek = now.getDay();
+                            const availableDays = settings?.available_days || [1, 2, 3, 4, 5];
+                            const isTodayWorkingDay = availableDays.includes(dayOfWeek);
+
+                            if (!isWithinWorkingHours || !isTodayWorkingDay) return null;
+
+                            return (
+                                <button
+                                    type="button"
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.75rem',
+                                        marginBottom: '1rem',
+                                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        fontSize: '0.95rem',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '0.5rem'
+                                    }}
+                                    onClick={() => {
+                                        const timeStr = `${String(nextHour.getHours()).padStart(2, '0')}:${String(nextHour.getMinutes()).padStart(2, '0')}`;
+                                        setSelectedTime(timeStr);
+                                        setSelectedDate(new Date());
+                                    }}
+                                >
+                                    ⚡ Quick Book: Today at {nextHour.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                                </button>
+                            );
+                        })()}
 
                         {selectedDate ? (
                             settings?.booking_mode === 'flexible' ? (
@@ -542,63 +558,105 @@ const BookingPage = () => {
                     </div>
                 </div>
 
-                {/* Contact Form */}
-                {selectedDate && selectedTime && (
-                    <form onSubmit={handleSubmit} style={styles.form}>
-                        <h3 style={styles.formTitle}>📋 Your Information</h3>
+                {/* Contact Form - Always visible for better UX */}
+                <form onSubmit={handleSubmit} style={styles.form}>
+                    <h3 style={styles.formTitle}>📋 Your Information</h3>
 
-                        {/* Dynamic Form Fields from custom_fields (new) or custom_form (legacy) */}
-                        {(settings?.custom_fields || settings?.custom_form || [
-                            { id: 'name', label: 'Your Name', type: 'text', required: true },
-                            { id: 'phone', label: 'Phone Number', type: 'tel', required: true },
-                            { id: 'email', label: 'Email Address', type: 'email', required: false },
-                            { id: 'notes', label: 'Additional Notes', type: 'textarea', required: false }
-                        ]).map(field => (
-                            <div key={field.id || field.name} style={styles.formRow}>
-                                {field.type === 'textarea' ? (
-                                    <textarea
-                                        placeholder={field.label + (field.required ? ' *' : '')}
-                                        required={field.required}
-                                        value={formData[field.id || field.name] || customFormData[field.id || field.name] || ''}
-                                        onChange={e => {
-                                            const fieldKey = field.id || field.name;
-                                            if (['name', 'email', 'phone', 'notes'].includes(fieldKey)) {
-                                                setFormData({ ...formData, [fieldKey]: e.target.value });
-                                            } else {
-                                                setCustomFormData({ ...customFormData, [fieldKey]: e.target.value });
-                                            }
-                                        }}
-                                        style={{ ...styles.input, minHeight: '80px' }}
-                                    />
-                                ) : (
-                                    <input
-                                        type={field.type || 'text'}
-                                        placeholder={field.label + (field.required ? ' *' : '')}
-                                        required={field.required}
-                                        value={formData[field.id || field.name] || customFormData[field.id || field.name] || ''}
-                                        onChange={e => {
-                                            const fieldKey = field.id || field.name;
-                                            if (['name', 'email', 'phone', 'notes'].includes(fieldKey)) {
-                                                setFormData({ ...formData, [fieldKey]: e.target.value });
-                                            } else {
-                                                setCustomFormData({ ...customFormData, [fieldKey]: e.target.value });
-                                            }
-                                        }}
-                                        style={styles.input}
-                                    />
-                                )}
-                            </div>
-                        ))}
+                    {/* Show selection status */}
+                    {(!selectedDate || !selectedTime) && (
+                        <div style={{
+                            padding: '0.75rem',
+                            marginBottom: '1rem',
+                            background: '#fff3cd',
+                            border: '1px solid #ffc107',
+                            borderRadius: '8px',
+                            fontSize: '0.875rem',
+                            color: '#856404',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem'
+                        }}>
+                            <span>ℹ️</span>
+                            <span>
+                                {!selectedDate && !selectedTime && 'Please select a date and time above to continue'}
+                                {selectedDate && !selectedTime && 'Please select a time slot to continue'}
+                            </span>
+                        </div>
+                    )}
 
-                        <button
-                            type="submit"
-                            disabled={submitting}
-                            style={styles.submitButton}
-                        >
-                            {submitting ? 'Booking...' : '✅ Confirm Booking'}
-                        </button>
-                    </form>
-                )}
+                    {/* Show selected date/time summary */}
+                    {selectedDate && selectedTime && (
+                        <div style={{
+                            padding: '0.75rem',
+                            marginBottom: '1rem',
+                            background: '#d4edda',
+                            border: '1px solid #28a745',
+                            borderRadius: '8px',
+                            fontSize: '0.875rem',
+                            color: '#155724'
+                        }}>
+                            <strong>Selected:</strong> {selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at {formatTime(selectedTime)}
+                        </div>
+                    )}
+
+                    {/* Dynamic Form Fields from custom_fields (new) or custom_form (legacy) */}
+                    {(settings?.custom_fields || settings?.custom_form || [
+                        { id: 'name', label: 'Your Name', type: 'text', required: true },
+                        { id: 'phone', label: 'Phone Number', type: 'tel', required: true },
+                        { id: 'email', label: 'Email Address', type: 'email', required: false },
+                        { id: 'notes', label: 'Additional Notes', type: 'textarea', required: false }
+                    ]).map(field => (
+                        <div key={field.id || field.name} style={styles.formRow}>
+                            {field.type === 'textarea' ? (
+                                <textarea
+                                    placeholder={field.label + (field.required ? ' *' : '')}
+                                    required={field.required}
+                                    value={formData[field.id || field.name] || customFormData[field.id || field.name] || ''}
+                                    onChange={e => {
+                                        const fieldKey = field.id || field.name;
+                                        if (['name', 'email', 'phone', 'notes'].includes(fieldKey)) {
+                                            setFormData({ ...formData, [fieldKey]: e.target.value });
+                                        } else {
+                                            setCustomFormData({ ...customFormData, [fieldKey]: e.target.value });
+                                        }
+                                    }}
+                                    style={{ ...styles.input, minHeight: '80px' }}
+                                />
+                            ) : (
+                                <input
+                                    type={field.type || 'text'}
+                                    placeholder={field.label + (field.required ? ' *' : '')}
+                                    required={field.required}
+                                    value={formData[field.id || field.name] || customFormData[field.id || field.name] || ''}
+                                    onChange={e => {
+                                        const fieldKey = field.id || field.name;
+                                        if (['name', 'email', 'phone', 'notes'].includes(fieldKey)) {
+                                            setFormData({ ...formData, [fieldKey]: e.target.value });
+                                        } else {
+                                            setCustomFormData({ ...customFormData, [fieldKey]: e.target.value });
+                                        }
+                                    }}
+                                    style={styles.input}
+                                />
+                            )}
+                        </div>
+                    ))}
+
+                    <button
+                        type="submit"
+                        disabled={submitting || !selectedDate || !selectedTime}
+                        style={{
+                            ...styles.submitButton,
+                            ...(!selectedDate || !selectedTime ? {
+                                opacity: 0.6,
+                                cursor: 'not-allowed',
+                                background: '#ccc'
+                            } : {})
+                        }}
+                    >
+                        {submitting ? 'Booking...' : !selectedDate || !selectedTime ? '📅 Select Date & Time First' : '✅ Confirm Booking'}
+                    </button>
+                </form>
             </div>
         </div >
     );
