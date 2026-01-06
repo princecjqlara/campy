@@ -111,10 +111,10 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         return () => clearInterval(refreshInterval);
     }, [selectedConversation?.id]);
 
-    // Auto-refresh conversation list every 30 seconds
+    // Auto-refresh conversation list every 30 seconds (silent to prevent UI flashing)
     useEffect(() => {
         const refreshInterval = setInterval(() => {
-            loadConversations?.(null, true);
+            loadConversations?.(null, true, true); // silent=true prevents loading flicker
         }, 30000); // 30 seconds
 
         return () => clearInterval(refreshInterval);

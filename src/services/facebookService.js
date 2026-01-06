@@ -285,6 +285,54 @@ class FacebookService {
     }
 
     /**
+     * Search conversations across ALL contacts (not just loaded page)
+     * This enables searching over the entire pagination
+     */
+    async searchConversations(searchTerm, pageId = null, limit = 50) {
+        try {
+            if (!searchTerm || searchTerm.trim().length < 2) {
+                return { conversations: [], total: 0 };
+            }
+
+            const term = searchTerm.trim().toLowerCase();
+
+            let query = getSupabase()
+                .from('facebook_conversations')
+                .select(`
+                    *,
+                    linked_client:linked_client_id(id, client_name, business_name),
+                    assigned_user:assigned_to(id, name, email)
+                `, { count: 'exact' })
+                .or('is_archived.is.null,is_archived.eq.false')
+                // Search in participant_name or last_message_text
+                .or(`participant_name.ilike.%${term}%,last_message_text.ilike.%${term}%`)
+                .order('last_message_time', { ascending: false })
+                .limit(limit);
+
+            if (pageId) {
+                query = query.eq('page_id', pageId);
+            }
+
+            const { data, error, count } = await query;
+
+            if (error) {
+                console.error('Search query error:', error);
+                throw error;
+            }
+
+            console.log(`Search for "${term}": found ${count} results`);
+
+            return {
+                conversations: data || [],
+                total: count || 0
+            };
+        } catch (error) {
+            console.error('Error searching conversations:', error);
+            return { conversations: [], total: 0 };
+        }
+    }
+
+    /**
      * Fetch messages for a conversation from Facebook
      */
     async fetchMessagesFromFacebook(conversationId, accessToken) {

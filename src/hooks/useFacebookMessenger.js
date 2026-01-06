@@ -54,9 +54,13 @@ export function useFacebookMessenger() {
     }, []);
 
     // Load conversations with pagination
-    const loadConversations = useCallback(async (pageId = null, reset = true) => {
+    // silent = true prevents loading state from causing UI flicker
+    const loadConversations = useCallback(async (pageId = null, reset = true, silent = false) => {
         try {
-            setLoading(true);
+            // Only show loading spinner if not a silent/background refresh
+            if (!silent) {
+                setLoading(true);
+            }
 
             // Always load page 1 when reset is true
             const result = await facebookService.getConversationsWithPagination(pageId, 1, 8);
@@ -81,7 +85,9 @@ export function useFacebookMessenger() {
             setError(err.message);
             return [];
         } finally {
-            setLoading(false);
+            if (!silent) {
+                setLoading(false);
+            }
         }
     }, []); // No dependencies - stable callback
 
@@ -566,6 +572,34 @@ export function useFacebookMessenger() {
         }
     }, [selectedConversation, loadConversations]);
 
+    // Search conversations across ALL contacts (not just loaded page)
+    const [conversationSearchResults, setConversationSearchResults] = useState([]);
+    const [searchingConversations, setSearchingConversations] = useState(false);
+
+    const searchConversationsAction = useCallback(async (searchTerm, pageId = null) => {
+        if (!searchTerm || searchTerm.trim().length < 2) {
+            setConversationSearchResults([]);
+            return [];
+        }
+
+        try {
+            setSearchingConversations(true);
+            const result = await facebookService.searchConversations(searchTerm, pageId);
+            setConversationSearchResults(result.conversations || []);
+            return result.conversations || [];
+        } catch (err) {
+            console.error('Error searching conversations:', err);
+            setError(err.message);
+            return [];
+        } finally {
+            setSearchingConversations(false);
+        }
+    }, []);
+
+    const clearConversationSearch = useCallback(() => {
+        setConversationSearchResults([]);
+    }, []);
+
     // Load settings
     const loadSettings = useCallback(async () => {
         try {
@@ -712,6 +746,7 @@ export function useFacebookMessenger() {
         sendBookingButton,
         loadMoreMessages,
         searchMessages: searchMessagesAction,
+        searchConversations: searchConversationsAction,
         syncAllConversations,
         syncMessages,
         linkToClient,
@@ -728,6 +763,11 @@ export function useFacebookMessenger() {
         transferToClient,
         updateExistingLead,
         bookMeetingFromAI,
+
+        // Conversation search results
+        conversationSearchResults,
+        searchingConversations,
+        clearConversationSearch,
 
         // Utilities
         clearError: () => setError(null),
