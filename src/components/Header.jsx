@@ -1,6 +1,28 @@
 import React from 'react';
 
-const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onThemeToggle, onAddClient, onAdminSettings, onNotifications, onReports, onCalendar, onTeamPerformance, onLogout, isOnlineMode, currentUserEmail, unreadNotificationCount = 0 }) => {
+const Header = ({
+  role,
+  currentUserName,
+  onUserNameChange,
+  onRoleChange,
+  onThemeToggle,
+  onAddClient,
+  onAdminSettings,
+  onNotifications,
+  onReports,
+  onCalendar,
+  onTeamPerformance,
+  onTeamOnline,
+  onLogout,
+  isOnlineMode,
+  currentUserEmail,
+  unreadNotificationCount = 0,
+  // Clock in/out props
+  isClockedIn = false,
+  shiftDuration = '',
+  onClockToggle,
+  clockLoading = false
+}) => {
   return (
     <header className="app-header">
       <div className="app-logo">
@@ -8,6 +30,53 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
         <h1>CAMPY</h1>
       </div>
       <div className="header-actions">
+        {/* Clock In/Out Button */}
+        {isOnlineMode && onClockToggle && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            marginRight: '0.75rem',
+            padding: '0.4rem 0.75rem',
+            borderRadius: 'var(--radius-md)',
+            background: isClockedIn ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+            border: `1px solid ${isClockedIn ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`
+          }}>
+            <span style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: isClockedIn ? '#22c55e' : '#ef4444',
+              boxShadow: isClockedIn ? '0 0 8px #22c55e' : 'none',
+              animation: isClockedIn ? 'pulse 2s infinite' : 'none'
+            }} />
+            <span style={{
+              fontSize: '0.8rem',
+              color: isClockedIn ? '#22c55e' : '#ef4444',
+              fontWeight: '500'
+            }}>
+              {isClockedIn ? `Online ${shiftDuration}` : 'Offline'}
+            </span>
+            <button
+              onClick={onClockToggle}
+              disabled={clockLoading}
+              style={{
+                padding: '0.25rem 0.5rem',
+                fontSize: '0.75rem',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: isClockedIn ? '#ef4444' : '#22c55e',
+                color: 'white',
+                cursor: clockLoading ? 'wait' : 'pointer',
+                opacity: clockLoading ? 0.7 : 1,
+                fontWeight: '500'
+              }}
+            >
+              {clockLoading ? '...' : (isClockedIn ? 'Clock Out' : 'Clock In')}
+            </button>
+          </div>
+        )}
+
         {isOnlineMode && currentUserEmail && (
           <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginRight: '0.5rem' }}>
             {currentUserEmail}
@@ -15,9 +84,9 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
         )}
         {!isOnlineMode && (
           <div className="role-selector">
-            <select 
-              className="form-select" 
-              id="roleSelector" 
+            <select
+              className="form-select"
+              id="roleSelector"
               style={{ minWidth: '120px' }}
               value={role}
               onChange={(e) => onRoleChange(e.target.value)}
@@ -37,17 +106,17 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
           onChange={(e) => onUserNameChange(e.target.value)}
           disabled={isOnlineMode}
         />
-        <button 
-          className="btn btn-secondary admin-only" 
-          id="adminSettingsBtn" 
+        <button
+          className="btn btn-secondary admin-only"
+          id="adminSettingsBtn"
           title="Expense Settings"
           onClick={onAdminSettings}
         >
           ⚙️ Settings
         </button>
         {onReports && (
-          <button 
-            className="btn btn-secondary admin-only" 
+          <button
+            className="btn btn-secondary admin-only"
             id="reportsBtn"
             title="Reports & Analytics"
             onClick={onReports}
@@ -56,8 +125,8 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
           </button>
         )}
         {onTeamPerformance && (
-          <button 
-            className="btn btn-secondary admin-only" 
+          <button
+            className="btn btn-secondary admin-only"
             id="teamPerformanceBtn"
             title="Team Performance & Leaderboard"
             onClick={onTeamPerformance}
@@ -65,9 +134,19 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
             🏆 Team Performance
           </button>
         )}
+        {onTeamOnline && (
+          <button
+            className="btn btn-secondary admin-only"
+            id="teamOnlineBtn"
+            title="Online Team & Auto-Assign"
+            onClick={onTeamOnline}
+          >
+            👥 Team
+          </button>
+        )}
         {onCalendar && (
-          <button 
-            className="btn btn-secondary" 
+          <button
+            className="btn btn-secondary"
             id="calendarBtn"
             title="Calendar View"
             onClick={onCalendar}
@@ -76,8 +155,8 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
           </button>
         )}
         {isOnlineMode && (
-          <button 
-            className="btn btn-secondary" 
+          <button
+            className="btn btn-secondary"
             id="notificationsBtn"
             title="Notifications"
             onClick={onNotifications}
@@ -105,16 +184,16 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
             )}
           </button>
         )}
-        <button 
-          className="btn btn-primary" 
+        <button
+          className="btn btn-primary"
           id="addClientBtn"
           onClick={onAddClient}
         >
           <span>➕</span> Add Client
         </button>
         {isOnlineMode && (
-          <button 
-            className="btn btn-secondary" 
+          <button
+            className="btn btn-secondary"
             id="logoutBtn"
             title="Sign Out"
             onClick={onLogout}
@@ -123,18 +202,25 @@ const Header = ({ role, currentUserName, onUserNameChange, onRoleChange, onTheme
             🚪 Logout
           </button>
         )}
-        <button 
-          className="theme-toggle" 
-          id="themeToggle" 
+        <button
+          className="theme-toggle"
+          id="themeToggle"
           title="Toggle Theme"
           onClick={onThemeToggle}
         >
           🌙
         </button>
       </div>
+
+      {/* Pulse animation for online indicator */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
     </header>
   );
 };
 
 export default Header;
-

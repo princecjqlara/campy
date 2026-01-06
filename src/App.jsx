@@ -19,8 +19,10 @@ import MeetingRoom from './components/MeetingRoom';
 import MessengerInbox from './components/MessengerInbox';
 import AIAssistantWidget from './components/AIAssistantWidget';
 import BookingPage from './components/BookingPage';
+import TeamOnlinePanel from './components/TeamOnlinePanel';
 import { useSupabase } from './hooks/useSupabase';
 import { useScheduledMessageProcessor } from './hooks/useScheduledMessageProcessor';
+import { useClockInOut } from './hooks/useClockInOut';
 import { useNotifications } from './hooks/useNotifications';
 import { useStorage } from './hooks/useStorage';
 import { useClients } from './hooks/useClients';
@@ -47,6 +49,7 @@ function App() {
   const [showCalendar, setShowCalendar] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showMeetingRoom, setShowMeetingRoom] = useState(false);
+  const [showTeamOnlinePanel, setShowTeamOnlinePanel] = useState(false);
   const [meetingRoomSlug, setMeetingRoomSlug] = useState(null);
   const [allUsers, setAllUsers] = useState([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
@@ -192,6 +195,14 @@ function App() {
 
   // Hybrid scheduled message processing - runs every 60s when user is logged in
   useScheduledMessageProcessor(!!currentUser);
+
+  // Clock in/out functionality
+  const {
+    isClockedIn,
+    shiftDurationFormatted,
+    loading: clockLoading,
+    toggle: toggleClock
+  } = useClockInOut(currentUser?.id);
 
   useEffect(() => {
     // Initialize theme
@@ -414,10 +425,15 @@ function App() {
             onReports={() => setShowReports(true)}
             onCalendar={() => setShowCalendar(true)}
             onTeamPerformance={() => setShowTeamPerformance(true)}
+            onTeamOnline={() => setShowTeamOnlinePanel(true)}
             onLogout={handleLogout}
             isOnlineMode={isOnlineMode}
             currentUserEmail={currentUser?.email}
             unreadNotificationCount={unreadNotificationCount}
+            isClockedIn={isClockedIn}
+            shiftDuration={shiftDurationFormatted}
+            onClockToggle={toggleClock}
+            clockLoading={clockLoading}
           />
 
           {/* Main Tab Navigation */}
@@ -583,6 +599,12 @@ function App() {
               clients={clients}
               users={allUsers}
               onClose={() => setShowTeamPerformance(false)}
+            />
+          )}
+
+          {showTeamOnlinePanel && (
+            <TeamOnlinePanel
+              onClose={() => setShowTeamOnlinePanel(false)}
             />
           )}
 
