@@ -128,8 +128,8 @@ const TeamOnlinePanel = ({ onClose }) => {
     }, [loadData]);
 
     return (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose?.()}>
-            <div className="modal-container" style={{ maxWidth: '600px' }}>
+        <div className="modal-overlay active" onClick={(e) => e.target === e.currentTarget && onClose?.()}>
+            <div className="modal" style={{ maxWidth: '600px' }}>
                 <div className="modal-header">
                     <h2>👥 Team & Auto-Assign</h2>
                     <button className="modal-close" onClick={onClose}>×</button>
