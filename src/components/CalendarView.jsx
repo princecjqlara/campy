@@ -195,7 +195,9 @@ const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName
 
   if (!isOpen) return null;
 
-  const formatShortTime = (t) => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(' ', '');
+  // Use Philippines timezone for all time displays
+  const PH_TIMEZONE = 'Asia/Manila';
+  const formatShortTime = (t) => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: PH_TIMEZONE }).replace(' ', '');
 
   return (
     <div className="modal-overlay active" onClick={onClose}>
@@ -303,7 +305,10 @@ const GanttDayView = ({ date, events, onClose, onSchedule, onEventClick, getEven
 
   const getPosition = (time) => {
     const d = new Date(time);
-    const h = d.getHours() + d.getMinutes() / 60;
+    // Get hours in Philippines timezone
+    const phTime = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: false, timeZone: 'Asia/Manila' });
+    const [hours, minutes] = phTime.split(':').map(Number);
+    const h = hours + minutes / 60;
     return Math.max(0, Math.min(100, ((h - 7) / 13) * 100));
   };
 
@@ -331,7 +336,8 @@ const GanttDayView = ({ date, events, onClose, onSchedule, onEventClick, getEven
   };
 
   const rowCount = assignRows(meetings);
-  const formatTime = (t) => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const PH_TIMEZONE = 'Asia/Manila';
+  const formatTime = (t) => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: PH_TIMEZONE });
 
   return (
     <div className="modal-overlay active" onClick={onClose} style={{ zIndex: 1001 }}>
@@ -404,29 +410,29 @@ const GanttDayView = ({ date, events, onClose, onSchedule, onEventClick, getEven
                     style={{
                       position: 'absolute',
                       left: `${left}%`,
-                      width: `${Math.min(width, 100 - left)}%`,
+                      width: `${Math.max(12, Math.min(width, 100 - left))}%`,
                       top: `${top}px`,
                       height: '55px',
                       background: `linear-gradient(135deg, ${getEventColor(meeting)}, ${getEventColor(meeting)}dd)`,
                       borderRadius: '10px',
                       cursor: 'pointer',
-                      padding: '8px 12px',
-                      overflow: 'hidden',
+                      padding: '8px 10px',
                       boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
                       border: '1px solid rgba(255,255,255,0.15)',
                       transition: 'transform 0.15s, box-shadow 0.15s',
+                      zIndex: 1,
                     }}
                     onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px) scale(1.02)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.35)'; }}
                     onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.25)'; }}
                   >
-                    <div style={{ fontSize: '0.875rem', fontWeight: '600', color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: '600', color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: '4px' }}>
                       {meeting.title}
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.9)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       🕐 {formatTime(meeting.start_time)} - {formatTime(meeting.end_time)}
                     </div>
                     {getClientName(meeting.client_id) && (
-                      <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.75)', marginTop: '2px' }}>
+                      <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.75)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         👤 {getClientName(meeting.client_id)}
                       </div>
                     )}
@@ -583,7 +589,7 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, onStartVide
         </div>
         <div className="modal-body">
           <div style={{ marginBottom: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            {new Date(meeting.start_time).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
+            {new Date(meeting.start_time).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' })}
             {meeting.client_id && ` • ${getClientName(meeting.client_id)}`}
           </div>
 
