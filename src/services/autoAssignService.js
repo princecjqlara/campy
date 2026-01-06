@@ -26,11 +26,10 @@ export const autoAssignService = {
                 return null;
             }
 
-            // Get all clocked-in chat support users (NOT admin)
+            // Get all chat support users (regardless of clock status)
             const { data: onlineUsers, error: usersError } = await supabase
                 .from('users')
                 .select('id, name, email')
-                .eq('is_clocked_in', true)
                 .eq('role', 'chat_support')
                 .order('name');
 
