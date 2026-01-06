@@ -17,6 +17,10 @@ const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName
     start_time: '', end_time: '', event_type: 'meeting', status: 'scheduled', notes: ''
   });
   const [saving, setSaving] = useState(false);
+  // Bulk delete state
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const [selectedEvents, setSelectedEvents] = useState(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -118,6 +122,55 @@ const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName
     setEvents(prev => prev.filter(e => e.id !== id)); setShowMeetingDetails(false);
   };
 
+  // Bulk delete selected events
+  const handleBulkDelete = async () => {
+    const idsToDelete = Array.from(selectedEvents).filter(id => !id.startsWith?.('payment-'));
+    if (idsToDelete.length === 0) {
+      alert('No meetings selected');
+      return;
+    }
+    if (!confirm(`Delete ${idsToDelete.length} meeting(s)?`)) return;
+
+    setDeleting(true);
+    try {
+      const client = getSupabaseClient();
+      if (client) {
+        for (const id of idsToDelete) {
+          await client.from('calendar_events').delete().eq('id', id);
+        }
+      }
+      setEvents(prev => prev.filter(e => !selectedEvents.has(e.id)));
+      setSelectedEvents(new Set());
+      setBulkSelectMode(false);
+      alert(`Deleted ${idsToDelete.length} meeting(s)`);
+    } catch (e) {
+      console.error('Bulk delete error:', e);
+      alert('Error deleting meetings');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Toggle event selection
+  const toggleEventSelection = (eventId) => {
+    setSelectedEvents(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(eventId)) newSet.delete(eventId);
+      else newSet.add(eventId);
+      return newSet;
+    });
+  };
+
+  // Select/deselect all meetings for current month
+  const selectAllMeetings = () => {
+    const meetingIds = events.filter(e => e.event_type === 'meeting' && !e.id?.startsWith?.('payment-')).map(e => e.id);
+    if (selectedEvents.size === meetingIds.length) {
+      setSelectedEvents(new Set());
+    } else {
+      setSelectedEvents(new Set(meetingIds));
+    }
+  };
+
   const getClientName = (id) => clients?.find(c => c.id === id)?.clientName || '';
   const getDaysInMonth = () => {
     const y = currentDate.getFullYear(), m = currentDate.getMonth();
@@ -144,26 +197,75 @@ const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName
           <button className="modal-close" onClick={onClose} style={{ fontSize: '1.25rem' }}>✕</button>
         </div>
         <div className="modal-body" style={{ padding: isMobile ? '0.75rem' : '1.25rem', flex: 1, overflow: 'auto' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <button className="btn btn-secondary" onClick={() => navigateMonth(-1)} style={{ padding: '0.5rem 0.75rem', fontSize: '0.875rem' }}>←</button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
               <span style={{ fontWeight: '600', fontSize: isMobile ? '1rem' : '1.25rem' }}>{monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}</span>
               <button className="btn btn-primary" onClick={() => handleScheduleMeeting(new Date())} style={{ padding: '0.5rem 0.75rem', fontSize: '0.875rem' }}>+ New</button>
+              <button
+                className={`btn ${bulkSelectMode ? 'btn-secondary' : 'btn-secondary'}`}
+                onClick={() => { setBulkSelectMode(!bulkSelectMode); setSelectedEvents(new Set()); }}
+                style={{ padding: '0.5rem 0.75rem', fontSize: '0.875rem', background: bulkSelectMode ? '#f59e0b' : undefined, color: bulkSelectMode ? 'white' : undefined }}
+              >
+                {bulkSelectMode ? '✕ Cancel' : '🗑️ Bulk Delete'}
+              </button>
             </div>
             <button className="btn btn-secondary" onClick={() => navigateMonth(1)} style={{ padding: '0.5rem 0.75rem', fontSize: '0.875rem' }}>→</button>
           </div>
+
+          {/* Bulk selection controls */}
+          {bulkSelectMode && (
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', padding: '0.75rem', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.875rem', fontWeight: '500' }}>🗑️ {selectedEvents.size} selected</span>
+              <button className="btn btn-secondary" onClick={selectAllMeetings} style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem' }}>
+                {selectedEvents.size === events.filter(e => e.event_type === 'meeting').length ? 'Deselect All' : 'Select All'}
+              </button>
+              <button
+                className="btn"
+                onClick={handleBulkDelete}
+                disabled={selectedEvents.size === 0 || deleting}
+                style={{ padding: '0.4rem 0.75rem', fontSize: '0.75rem', background: '#ef4444', color: 'white', marginLeft: 'auto' }}
+              >
+                {deleting ? 'Deleting...' : `Delete ${selectedEvents.size} Meeting(s)`}
+              </button>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', background: 'var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
             {dayNames.map(d => <div key={d} style={{ padding: isMobile ? '0.4rem' : '0.5rem', textAlign: 'center', fontWeight: '600', background: 'var(--bg-secondary)', fontSize: isMobile ? '0.7rem' : '0.875rem' }}>{d}</div>)}
             {getDaysInMonth().map((date, i) => {
               const dayEvents = getEventsForDate(date);
               const isToday = date?.toDateString() === new Date().toDateString();
               return (
-                <div key={i} onClick={() => date && handleDayClick(date)} style={{ minHeight: isMobile ? '55px' : '80px', padding: '4px', background: isToday ? 'rgba(59,130,246,0.15)' : 'var(--bg-primary)', cursor: date ? 'pointer' : 'default', transition: 'background 0.15s' }}>
+                <div key={i} onClick={() => date && !bulkSelectMode && handleDayClick(date)} style={{ minHeight: isMobile ? '55px' : '80px', padding: '4px', background: isToday ? 'rgba(59,130,246,0.15)' : 'var(--bg-primary)', cursor: date && !bulkSelectMode ? 'pointer' : 'default', transition: 'background 0.15s' }}>
                   {date && <>
                     <div style={{ fontWeight: isToday ? 'bold' : 'normal', fontSize: isMobile ? '0.75rem' : '0.875rem', color: isToday ? 'var(--primary)' : 'var(--text-primary)', marginBottom: '2px' }}>{date.getDate()}</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                       {dayEvents.slice(0, isMobile ? 2 : 3).map(e => (
-                        <div key={e.id} style={{ fontSize: isMobile ? '0.55rem' : '0.65rem', padding: '2px 4px', background: getEventColor(e), color: 'white', borderRadius: '3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div
+                          key={e.id}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            if (bulkSelectMode && !e.id?.startsWith?.('payment-')) {
+                              toggleEventSelection(e.id);
+                            } else if (!bulkSelectMode) {
+                              setSelectedMeeting(e);
+                              setShowMeetingDetails(true);
+                            }
+                          }}
+                          style={{
+                            fontSize: isMobile ? '0.55rem' : '0.65rem',
+                            padding: '2px 4px',
+                            background: selectedEvents.has(e.id) ? '#22c55e' : getEventColor(e),
+                            color: 'white',
+                            borderRadius: '3px',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            cursor: 'pointer',
+                            border: selectedEvents.has(e.id) ? '2px solid white' : 'none'
+                          }}
+                        >
+                          {bulkSelectMode && !e.id?.startsWith?.('payment-') ? (selectedEvents.has(e.id) ? '✓ ' : '☐ ') : ''}
                           {isMobile ? '•' : `${formatShortTime(e.start_time)} ${e.title.substring(0, 6)}`}
                         </div>
                       ))}
