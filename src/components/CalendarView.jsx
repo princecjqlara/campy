@@ -117,9 +117,23 @@ const CalendarView = ({ clients, isOpen, onClose, currentUserId, currentUserName
 
   const handleDeleteEvent = async (id) => {
     if (!id || id.startsWith?.('payment-') || !confirm('Delete?')) return;
-    const client = getSupabaseClient();
-    if (client) await client.from('calendar_events').delete().eq('id', id);
-    setEvents(prev => prev.filter(e => e.id !== id)); setShowMeetingDetails(false);
+    try {
+      // Use API endpoint to bypass RLS
+      const response = await fetch('/api/calendar/events', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] })
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.error || 'Delete failed');
+      }
+      setEvents(prev => prev.filter(e => e.id !== id));
+      setShowMeetingDetails(false);
+    } catch (e) {
+      console.error('Delete error:', e);
+      alert('Error deleting event: ' + e.message);
+    }
   };
 
   // Bulk delete selected events using API (bypasses RLS)
@@ -496,18 +510,25 @@ const MeetingDetailsModal = ({ meeting, onClose, onUpdate, onDelete, onStartVide
         }
 
         // Check if there's a room for this calendar event
-        const { data } = await client
+        const { data, error } = await client
           .from('meeting_rooms')
           .select('room_slug')
           .eq('calendar_event_id', meeting.id)
-          .single();
+          .maybeSingle(); // Use maybeSingle to avoid errors when no row found
+
+        // Ignore RLS/permission errors - just means table isn't set up
+        if (error && (error.code === '42501' || error.code === '42P01' || error.message?.includes('permission'))) {
+          console.log('Meeting rooms not available:', error.message);
+          setLoadingRoom(false);
+          return;
+        }
 
         if (data?.room_slug) {
           setRoomSlug(data.room_slug);
           setRoomLink(`${window.location.origin}/room/${data.room_slug}`);
         }
       } catch (e) {
-        // No room exists yet, that's okay
+        // No room exists yet or table doesn't exist, that's okay
         console.log('No room for this event yet');
       } finally {
         setLoadingRoom(false);
