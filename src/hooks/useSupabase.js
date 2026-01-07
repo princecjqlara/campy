@@ -410,7 +410,10 @@ export const useSupabase = () => {
       createdBy: row.created_by,
       createdUser: row.created_user,
       createdAt: row.created_at,
-      updatedAt: row.updated_at
+      updatedAt: row.updated_at,
+      source: row.source,
+      niche: row.niche,
+      facebookPage: row.facebook_page
     };
   };
 
@@ -446,7 +449,10 @@ export const useSupabase = () => {
       },
       resubscription_count: client.resubscriptionCount,
       ads_expense: client.adsExpense,
-      assigned_to: client.assignedTo || null
+      assigned_to: client.assignedTo || null,
+      source: client.source,
+      niche: client.niche,
+      facebook_page: client.facebookPage
     };
   };
 

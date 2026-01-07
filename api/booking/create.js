@@ -267,6 +267,81 @@ export default async function handler(req, res) {
             console.log('Calendar sync error (non-critical):', calError.message);
         }
 
+        // Auto-add to client pipeline when someone books
+        try {
+            // Check if this contact already exists in pipeline (by phone or name+page)
+            let existingClient = null;
+
+            if (contactPhone) {
+                const { data: byPhone } = await supabase
+                    .from('clients')
+                    .select('id')
+                    .ilike('contact_details', `%${contactPhone}%`)
+                    .limit(1)
+                    .maybeSingle();
+                existingClient = byPhone;
+            }
+
+            if (!existingClient && contactName) {
+                const { data: byName } = await supabase
+                    .from('clients')
+                    .select('id')
+                    .ilike('client_name', contactName)
+                    .limit(1)
+                    .maybeSingle();
+                existingClient = byName;
+            }
+
+            if (!existingClient) {
+                // Create new client in pipeline with prefilled details
+                const clientData = {
+                    client_name: contactName,
+                    business_name: customFormData?.business_name || customFormData?.businessName || null,
+                    contact_details: [contactPhone, contactEmail].filter(Boolean).join(' | ') || null,
+                    notes: notes || null,
+                    phase: 'booked',
+                    payment_status: 'unpaid',
+                    source: 'booking',
+                    niche: customFormData?.niche || customFormData?.industry || null,
+                    created_at: new Date().toISOString()
+                };
+
+                const { data: newClient, error: clientError } = await supabase
+                    .from('clients')
+                    .insert(clientData)
+                    .select()
+                    .single();
+
+                if (clientError) {
+                    // Check if it's just missing column errors (source, niche) - try without them
+                    if (clientError.message?.includes('source') || clientError.message?.includes('niche')) {
+                        delete clientData.source;
+                        delete clientData.niche;
+
+                        const { data: retryClient, error: retryError } = await supabase
+                            .from('clients')
+                            .insert(clientData)
+                            .select()
+                            .single();
+
+                        if (!retryError) {
+                            console.log('✅ Auto-added to pipeline (without source/niche):', retryClient?.id);
+                        } else {
+                            console.log('Could not auto-add to pipeline:', retryError.message);
+                        }
+                    } else {
+                        console.log('Could not auto-add to pipeline:', clientError.message);
+                    }
+                } else {
+                    console.log('✅ Auto-added to pipeline:', newClient?.id);
+                }
+            } else {
+                console.log('Contact already exists in pipeline:', existingClient.id);
+            }
+        } catch (pipelineError) {
+            console.log('Pipeline sync error (non-critical):', pipelineError.message);
+        }
+
         // Build confirmation message
         const formattedDate = new Date(date).toLocaleDateString('en-US', {
             weekday: 'long',
