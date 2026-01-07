@@ -165,15 +165,22 @@ function generateSlots(config, date, bookedTimes) {
     const endMinute = parseInt(endParts[1] || 0);
 
     // Only filter past times for today - no advance booking restrictions
-    const now = new Date();
+    // Get current time in Philippines timezone (UTC+8)
+    const nowUTC = new Date();
+    const phOffsetMs = 8 * 60 * 60 * 1000; // 8 hours in milliseconds
+    const nowPH = new Date(nowUTC.getTime() + phOffsetMs);
+
+    // For date comparison, use Philippines time
     const dateObj = new Date(date);
-    const isToday = dateObj.toDateString() === now.toDateString();
+    const dateStrPH = `${nowPH.getFullYear()}-${String(nowPH.getMonth() + 1).padStart(2, '0')}-${String(nowPH.getDate()).padStart(2, '0')}`;
+    const isToday = date === dateStrPH;
 
     // Same-day buffer: if admin sets 5 hours, contacts can only book slots 5+ hours from now
     const sameDayBuffer = config.same_day_buffer || 0; // Default: no buffer, just past times
-    const minBookingTime = isToday
-        ? new Date(now.getTime() + (sameDayBuffer * 60 * 60 * 1000))
-        : null;
+    const currentPHHour = nowPH.getHours();
+    const currentPHMinute = nowPH.getMinutes();
+    const minHour = currentPHHour + sameDayBuffer;
+    const minMinute = currentPHMinute;
 
     while (currentHour < endHour || (currentHour === endHour && currentMinute < endMinute)) {
         const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
@@ -189,11 +196,11 @@ function generateSlots(config, date, bookedTimes) {
             continue;
         }
 
-        // For today: skip if slot is before minBookingTime (now + buffer hours)
+        // For today: skip if slot is before current Philippines time + buffer
         if (isToday) {
-            const slotDateTime = new Date(date);
-            slotDateTime.setHours(currentHour, currentMinute, 0, 0);
-            if (slotDateTime <= (minBookingTime || now)) {
+            const slotTotalMinutes = currentHour * 60 + currentMinute;
+            const minTotalMinutes = minHour * 60 + minMinute;
+            if (slotTotalMinutes <= minTotalMinutes) {
                 currentMinute += duration;
                 while (currentMinute >= 60) {
                     currentMinute -= 60;
