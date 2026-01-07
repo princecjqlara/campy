@@ -176,11 +176,14 @@ function generateSlots(config, date, bookedTimes) {
     const isToday = date === dateStrPH;
 
     // Same-day buffer: if admin sets 5 hours, contacts can only book slots 5+ hours from now
+    // Example: At 8:13 AM with 5-hour buffer, first available slot is 1:00 PM (not 1:13 PM)
     const sameDayBuffer = config.same_day_buffer || 0; // Default: no buffer, just past times
     const currentPHHour = nowPH.getHours();
     const currentPHMinute = nowPH.getMinutes();
-    const minHour = currentPHHour + sameDayBuffer;
-    const minMinute = currentPHMinute;
+    // Calculate minimum booking hour - round up to next hour if we have minutes, then add buffer
+    const minBookingHour = currentPHMinute > 0 ? currentPHHour + 1 + sameDayBuffer : currentPHHour + sameDayBuffer;
+
+    console.log(`[BUFFER] CurrentPH: ${currentPHHour}:${currentPHMinute}, Buffer: ${sameDayBuffer}h, MinBookingHour: ${minBookingHour}`);
 
     while (currentHour < endHour || (currentHour === endHour && currentMinute < endMinute)) {
         const timeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
@@ -196,18 +199,14 @@ function generateSlots(config, date, bookedTimes) {
             continue;
         }
 
-        // For today: skip if slot is before current Philippines time + buffer
-        if (isToday) {
-            const slotTotalMinutes = currentHour * 60 + currentMinute;
-            const minTotalMinutes = minHour * 60 + minMinute;
-            if (slotTotalMinutes <= minTotalMinutes) {
-                currentMinute += duration;
-                while (currentMinute >= 60) {
-                    currentMinute -= 60;
-                    currentHour += 1;
-                }
-                continue;
+        // For today: skip slots before the minimum booking hour
+        if (isToday && currentHour < minBookingHour) {
+            currentMinute += duration;
+            while (currentMinute >= 60) {
+                currentMinute -= 60;
+                currentHour += 1;
             }
+            continue;
         }
 
         slots.push(timeStr);
