@@ -588,14 +588,61 @@ export function useFacebookMessenger() {
     const linkToClient = useCallback(async (conversationId, clientId) => {
         try {
             await facebookService.linkConversationToClient(conversationId, clientId);
-            await loadConversations();
+
+            // Update local state immediately for responsive UI
+            if (selectedConversation?.conversation_id === conversationId) {
+                setSelectedConversation(prev => ({
+                    ...prev,
+                    linked_client_id: clientId,
+                    linked_client: clientId ? prev?.linked_client : null
+                }));
+            }
+
+            // Also update conversations list
+            setConversations(prev => prev.map(conv =>
+                conv.conversation_id === conversationId
+                    ? { ...conv, linked_client_id: clientId, linked_client: clientId ? conv.linked_client : null }
+                    : conv
+            ));
+
             return true;
         } catch (err) {
             console.error('Error linking to client:', err);
             setError(err.message);
             return false;
         }
-    }, [loadConversations]);
+    }, [selectedConversation]);
+
+    // Refresh contact name from Facebook
+    const refreshContactName = useCallback(async () => {
+        if (!selectedConversation) return null;
+
+        try {
+            const newName = await facebookService.refreshContactName(
+                selectedConversation.conversation_id,
+                selectedConversation.participant_id,
+                selectedConversation.page_id
+            );
+
+            // Update local state
+            setSelectedConversation(prev => ({
+                ...prev,
+                participant_name: newName
+            }));
+
+            // Update conversations list
+            setConversations(prev => prev.map(conv =>
+                conv.conversation_id === selectedConversation.conversation_id
+                    ? { ...conv, participant_name: newName }
+                    : conv
+            ));
+
+            return newName;
+        } catch (err) {
+            console.error('Error refreshing contact name:', err);
+            throw err;
+        }
+    }, [selectedConversation]);
 
     // Assign conversation to user
     const assignToUser = useCallback(async (conversationId, userId) => {
@@ -875,6 +922,7 @@ export function useFacebookMessenger() {
         syncAllConversations,
         syncMessages,
         linkToClient,
+        refreshContactName,
         assignToUser,
         deleteConversation,
         loadSettings,

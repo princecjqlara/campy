@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useFacebookMessenger } from '../hooks/useFacebookMessenger';
 import { facebookService } from '../services/facebookService';
 import WarningDashboard from './WarningDashboard';
+import { extractContactDetails, generateNotes } from '../services/aiConversationAnalyzer';
 
 const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
     const {
@@ -16,6 +17,7 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         sendMessage,
         syncAllConversations,
         linkToClient,
+        refreshContactName,
         assignToUser,
         deleteConversation,
         clearError,
@@ -65,6 +67,7 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
     });
     const [editableNotes, setEditableNotes] = useState('');
     const [showMediaUpload, setShowMediaUpload] = useState(false);
+    const [extractingDetails, setExtractingDetails] = useState(false);
     // AI priority sorting - persisted to localStorage
     const [smartSort, setSmartSort] = useState(() => {
         const saved = localStorage.getItem('messenger_ai_priority');
@@ -1245,8 +1248,32 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                     {selectedConversation.participant_name?.charAt(0)?.toUpperCase() || '?'}
                                 </div>
                                 <div>
-                                    <div style={{ fontWeight: '600' }}>
+                                    <div style={{ fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                         {selectedConversation.participant_name || 'Unknown'}
+                                        {(!selectedConversation.participant_name || selectedConversation.participant_name === 'Unknown') && (
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        await refreshContactName();
+                                                    } catch (err) {
+                                                        console.error('Failed to refresh name:', err);
+                                                        alert('Could not fetch name from Facebook. The user may have privacy settings enabled.');
+                                                    }
+                                                }}
+                                                title="Refresh name from Facebook"
+                                                style={{
+                                                    background: 'var(--bg-secondary)',
+                                                    border: '1px solid var(--border-color)',
+                                                    borderRadius: '4px',
+                                                    padding: '0.125rem 0.5rem',
+                                                    fontSize: '0.7rem',
+                                                    cursor: 'pointer',
+                                                    color: 'var(--text-muted)'
+                                                }}
+                                            >
+                                                🔄 Refresh
+                                            </button>
+                                        )}
                                     </div>
                                     {selectedConversation.linked_client && (
                                         <div style={{ fontSize: '0.75rem', color: 'var(--primary)' }}>
@@ -2020,22 +2047,47 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                 <div style={{ marginTop: '1rem' }}>
                                     <button
                                         className="btn btn-primary"
-                                        onClick={() => {
-                                            // Prefill form with conversation data
+                                        onClick={async () => {
+                                            // Start with basic info
                                             setTransferForm({
                                                 clientName: selectedConversation.participant_name || '',
-                                                businessName: aiAnalysis?.details?.businessName || '',
-                                                contactDetails: aiAnalysis?.details?.phone || aiAnalysis?.details?.email || '',
-                                                pageLink: aiAnalysis?.details?.facebookPage || '',
-                                                niche: aiAnalysis?.details?.niche || '',
-                                                notes: aiAnalysis?.notes || ''
+                                                businessName: '',
+                                                contactDetails: '',
+                                                pageLink: '',
+                                                niche: '',
+                                                notes: ''
                                             });
                                             setShowTransferModal(true);
+
+                                            // Then run AI extraction in background
+                                            if (messages && messages.length > 0) {
+                                                setExtractingDetails(true);
+                                                try {
+                                                    const [details, notes] = await Promise.all([
+                                                        extractContactDetails(messages, selectedConversation.participant_name),
+                                                        generateNotes(messages, selectedConversation.participant_name)
+                                                    ]);
+
+                                                    // Update form with extracted data
+                                                    setTransferForm(prev => ({
+                                                        ...prev,
+                                                        businessName: details?.businessName || prev.businessName,
+                                                        contactDetails: details?.phone || details?.email || prev.contactDetails,
+                                                        pageLink: details?.facebookPage || details?.website || prev.pageLink,
+                                                        niche: details?.niche || prev.niche,
+                                                        notes: notes || prev.notes
+                                                    }));
+                                                } catch (err) {
+                                                    console.error('AI extraction error:', err);
+                                                } finally {
+                                                    setExtractingDetails(false);
+                                                }
+                                            }
                                         }}
-                                        disabled={loading}
+                                        disabled={loading || extractingDetails}
                                         style={{ width: '100%' }}
                                     >
-                                        ➕ Add to Pipeline
+                                        {extractingDetails ? '🤖 Analyzing...' : '➕ Add to Pipeline'}
                                     </button>
                                 </div>
                             )}
@@ -2445,6 +2497,25 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
                                 Review and edit the details before adding to pipeline:
                             </p>
+
+                            {/* AI Extraction Banner */}
+                            {extractingDetails && (
+                                <div style={{
+                                    padding: '0.75rem',
+                                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))',
+                                    borderRadius: 'var(--radius-md)',
+                                    marginBottom: '1rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    border: '1px solid rgba(99, 102, 241, 0.3)'
+                                }}>
+                                    <span className="spinner" style={{ width: '16px', height: '16px' }}>🤖</span>
+                                    <span style={{ fontSize: '0.875rem', color: 'var(--primary)' }}>
+                                        AI is extracting contact details from conversation...
+                                    </span>
+                                </div>
+                            )}
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                 <div>

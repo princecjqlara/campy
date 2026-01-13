@@ -595,6 +595,56 @@ class FacebookService {
     }
 
     /**
+     * Refresh contact name from Facebook Graph API
+     * Fetches the user's profile and updates the conversation
+     */
+    async refreshContactName(conversationId, participantId, pageId) {
+        try {
+            // Get page access token
+            const pages = await this.getConnectedPages();
+            const page = pages.find(p => p.page_id === pageId);
+            if (!page?.page_access_token) {
+                throw new Error('Page access token not found');
+            }
+
+            // Fetch user profile from Facebook
+            const response = await fetch(
+                `${GRAPH_API_BASE}/${participantId}?fields=name,first_name,last_name&access_token=${page.page_access_token}`
+            );
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                console.error('Facebook API error:', errorData);
+                throw new Error(errorData.error?.message || 'Failed to fetch profile');
+            }
+
+            const profile = await response.json();
+            const userName = profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+
+            if (!userName) {
+                throw new Error('Name not available from Facebook');
+            }
+
+            // Update conversation with new name
+            const { error } = await getSupabase()
+                .from('facebook_conversations')
+                .update({
+                    participant_name: userName,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('conversation_id', conversationId);
+
+            if (error) throw error;
+
+            console.log(`Refreshed contact name: ${userName}`);
+            return userName;
+        } catch (error) {
+            console.error('Error refreshing contact name:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Subscribe to real-time message updates
      */
     subscribeToMessages(callback) {
