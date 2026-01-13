@@ -150,7 +150,8 @@ class FacebookService {
     async fetchConversationsFromFacebook(pageId, accessToken) {
         try {
             const allConversations = [];
-            let url = `${GRAPH_API_BASE}/${pageId}/conversations?fields=participants,updated_time,unread_count,messages.limit(1){message,from,created_time}&limit=100&access_token=${accessToken}`;
+            // Explicitly request name field in participants
+            let url = `${GRAPH_API_BASE}/${pageId}/conversations?fields=participants{name,id},updated_time,unread_count,messages.limit(1){message,from,created_time}&limit=100&access_token=${accessToken}`;
 
             // Paginate through all conversations
             while (url) {
@@ -196,11 +197,27 @@ class FacebookService {
                 const participant = conv.participants?.data?.find(p => p.id !== pageId);
                 const lastMessage = conv.messages?.data?.[0];
 
+                // Get participant name - fallback to fetching from user profile if not in conversation
+                let participantName = participant?.name;
+                if (!participantName && participant?.id) {
+                    try {
+                        const userResponse = await fetch(
+                            `${GRAPH_API_BASE}/${participant.id}?fields=name,first_name,last_name&access_token=${page.page_access_token}`
+                        );
+                        if (userResponse.ok) {
+                            const userData = await userResponse.json();
+                            participantName = userData.name || `${userData.first_name || ''} ${userData.last_name || ''}`.trim();
+                        }
+                    } catch (err) {
+                        console.log(`Could not fetch name for ${participant.id}:`, err.message);
+                    }
+                }
+
                 const conversationData = {
                     page_id: pageId,
                     conversation_id: conv.id,
                     participant_id: participant?.id || 'unknown',
-                    participant_name: participant?.name,
+                    participant_name: participantName || null,
                     last_message_text: lastMessage?.message,
                     last_message_time: lastMessage?.created_time,
                     // Track if last message was from page (for AI priority sorting)
