@@ -262,13 +262,19 @@ async function handleIncomingMessage(pageId, event) {
 
         if (isNewConversation) {
             // INSERT new conversation
-            const { error } = await db
+            console.log(`[WEBHOOK] Attempting to INSERT new conversation for participant ${participantId} on page ${pageId}`);
+            const { error, data } = await db
                 .from('facebook_conversations')
-                .insert(conversationData);
+                .insert(conversationData)
+                .select();
             convError = error;
 
-            if (!error) {
+            if (error) {
+                console.error(`[WEBHOOK] CONVERSATION INSERT FAILED:`, JSON.stringify(error));
+                console.error(`[WEBHOOK] Attempted to insert:`, JSON.stringify(conversationData));
+            } else {
                 console.log(`[WEBHOOK] NEW CONTACT: ${participantName || participantId} - AI enabled, goal=booking`);
+                console.log(`[WEBHOOK] Insert returned:`, data ? 'success' : 'no data');
             }
         } else {
             // UPDATE existing conversation
@@ -282,9 +288,12 @@ async function handleIncomingMessage(pageId, event) {
 
         if (convError) {
             console.error('[WEBHOOK] Error saving conversation:', convError);
-        } else {
-            console.log(`[WEBHOOK] Conversation ${conversationId} saved, unread: ${newUnreadCount}`);
+            // CRITICAL: Don't continue to message save if conversation doesn't exist
+            console.error('[WEBHOOK] Aborting message save due to conversation error');
+            return;
         }
+
+        console.log(`[WEBHOOK] Conversation ${conversationId} saved, unread: ${newUnreadCount}`);
 
         // Save message
         // For echoes (messages from page), check if already saved by app
