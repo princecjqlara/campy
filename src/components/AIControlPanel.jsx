@@ -503,6 +503,90 @@ export default function AIControlPanel({ conversationId, participantName, onClos
                                                     </div>
                                                 </div>
                                             )}
+                                            {/* Conversation Summary Section */}
+                                            {(() => {
+                                                // Try to parse summary from latest action log
+                                                const summary = nextFollowUp.action_data?.conversation_summary;
+                                                if (!summary) return null;
+
+                                                return (
+                                                    <div style={{
+                                                        marginTop: '12px',
+                                                        padding: '12px',
+                                                        background: 'rgba(59, 130, 246, 0.15)',
+                                                        borderRadius: '8px',
+                                                        border: '1px solid rgba(59, 130, 246, 0.3)'
+                                                    }}>
+                                                        <div style={{
+                                                            fontSize: '11px',
+                                                            color: '#60a5fa',
+                                                            fontWeight: 600,
+                                                            marginBottom: '8px'
+                                                        }}>
+                                                            📊 Conversation Summary
+                                                        </div>
+                                                        <div style={{ fontSize: '12px', color: '#bfdbfe', lineHeight: '1.6' }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                                <span style={{ color: '#9ca3af' }}>Interest Level:</span>
+                                                                <span style={{
+                                                                    color: summary.interest_level === 'hot' ? '#ef4444' :
+                                                                        summary.interest_level === 'warm' ? '#f59e0b' :
+                                                                            summary.interest_level === 'cold' ? '#60a5fa' : '#9ca3af',
+                                                                    fontWeight: 600,
+                                                                    textTransform: 'uppercase'
+                                                                }}>
+                                                                    {summary.interest_level === 'hot' ? '🔥 ' :
+                                                                        summary.interest_level === 'warm' ? '🌡️ ' :
+                                                                            summary.interest_level === 'cold' ? '❄️ ' : '❓ '}
+                                                                    {summary.interest_level || 'Unknown'}
+                                                                </span>
+                                                            </div>
+                                                            {summary.interested_in && (
+                                                                <div style={{ marginBottom: '4px' }}>
+                                                                    <span style={{ color: '#9ca3af' }}>Interested In: </span>
+                                                                    <span>{summary.interested_in}</span>
+                                                                </div>
+                                                            )}
+                                                            {summary.contact_status && (
+                                                                <div style={{ marginBottom: '4px' }}>
+                                                                    <span style={{ color: '#9ca3af' }}>Status: </span>
+                                                                    <span>{summary.contact_status}</span>
+                                                                </div>
+                                                            )}
+                                                            {summary.last_topic && (
+                                                                <div style={{ marginBottom: '4px' }}>
+                                                                    <span style={{ color: '#9ca3af' }}>Last Topic: </span>
+                                                                    <span>{summary.last_topic}</span>
+                                                                </div>
+                                                            )}
+                                                            {summary.buying_signals && summary.buying_signals !== 'none' && (
+                                                                <div style={{ marginBottom: '4px', color: '#34d399' }}>
+                                                                    <span style={{ color: '#9ca3af' }}>💰 Buying Signals: </span>
+                                                                    <span>{summary.buying_signals}</span>
+                                                                </div>
+                                                            )}
+                                                            {summary.objections && summary.objections !== 'none' && (
+                                                                <div style={{ marginBottom: '4px', color: '#f87171' }}>
+                                                                    <span style={{ color: '#9ca3af' }}>⚠️ Objections: </span>
+                                                                    <span>{summary.objections}</span>
+                                                                </div>
+                                                            )}
+                                                            {summary.next_action && (
+                                                                <div style={{
+                                                                    marginTop: '8px',
+                                                                    padding: '6px 8px',
+                                                                    background: 'rgba(34, 197, 94, 0.2)',
+                                                                    borderRadius: '4px',
+                                                                    color: '#86efac'
+                                                                }}>
+                                                                    <span style={{ fontWeight: 600 }}>Next: </span>
+                                                                    {summary.next_action}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
                                             <div style={{
                                                 fontSize: '11px',
                                                 color: '#9ca3af',

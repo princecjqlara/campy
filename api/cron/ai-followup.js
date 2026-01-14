@@ -259,7 +259,16 @@ You must respond with ONLY valid JSON (no markdown, no explanation):
   "skip_followup": <true/false>,
   "skip_reason": "<if skip is true, why>",
   "wait_minutes": <number between 5-120>,
-  "reason": "<brief explanation>"
+  "reason": "<brief explanation>",
+  "conversation_summary": {
+    "interest_level": "<hot|warm|cold|unknown>",
+    "interested_in": "<what product/service they asked about>",
+    "contact_status": "<actively engaged|waiting for response|went silent|busy|thinking>",
+    "last_topic": "<what was last discussed>",
+    "buying_signals": "<any buying intent shown, or 'none'>",
+    "objections": "<any concerns raised, or 'none'>",
+    "next_action": "<what AI should do next>"
+  }
 }
 
 WHEN TO SKIP:
@@ -309,9 +318,10 @@ ULTRA-AGGRESSIVE TIMING (IN MINUTES!):
                                 analysis = {
                                     wait_minutes: waitMinutes,
                                     reason: parsed.reason || `Silent for ${minutesSince} mins - urgent follow-up`,
-                                    follow_up_type: 'best_time'
+                                    follow_up_type: 'best_time',
+                                    conversation_summary: parsed.conversation_summary || null
                                 };
-                                console.log(`[CRON] 🔥 AI analysis for ${conv.participant_name}: wait ${waitMinutes} MINS - ${analysis.reason}`);
+                                console.log(`[CRON] 🔥 AI: ${conv.participant_name} - wait ${waitMinutes}m | Interest: ${parsed.conversation_summary?.interest_level || 'unknown'} | ${analysis.reason}`);
                             }
                         } catch (aiErr) {
                             console.log(`[CRON] AI analysis error (using 30 min default):`, aiErr.message);
@@ -342,12 +352,17 @@ ULTRA-AGGRESSIVE TIMING (IN MINUTES!):
                     console.log(`[CRON] ✅ Scheduled follow-up for ${conv.participant_name || conv.conversation_id} in ${analysis.wait_minutes} MINS`);
                     results.scheduled++;
 
-                    // Log the action
+                    // Log the action with conversation summary
                     await db.from('ai_action_log').insert({
                         conversation_id: conv.conversation_id,
                         page_id: conv.page_id,
                         action_type: 'silence_detected',
-                        action_data: { hoursSince, waitMinutes: analysis.wait_minutes, reason: analysis.reason },
+                        action_data: {
+                            hoursSince,
+                            waitMinutes: analysis.wait_minutes,
+                            reason: analysis.reason,
+                            conversation_summary: analysis.conversation_summary
+                        },
                         explanation: `AI intuition: ${analysis.reason} `
                     });
                 }
