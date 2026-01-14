@@ -332,7 +332,7 @@ AGGRESSIVE TIMING (when NOT skipping):
                         conversation_id: conv.conversation_id,
                         page_id: conv.page_id,
                         scheduled_at: scheduledAt.toISOString(),
-                        follow_up_type: analysis.follow_up_type,
+                        follow_up_type: 'best_time',  // Database only allows 'best_time'
                         reason: analysis.reason,
                         status: 'pending'
                     });
