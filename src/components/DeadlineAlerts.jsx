@@ -1,12 +1,21 @@
 import React, { useMemo, useState, useEffect } from 'react';
 
 /**
- * DeadlineAlerts - Shows clients with approaching or overdue deadlines
- * Displays as a collapsible table at the top of the Clients tab
+ * DeadlineAlerts - Shows clients who have exceeded their stage deadline
+ * Uses stage_warning_days from settings to determine if client needs attention
  */
 const DeadlineAlerts = ({ clients, onViewClient, onEditClient }) => {
-    // Response deadline from settings (default 24 hours)
-    const [responseDeadlineHours, setResponseDeadlineHours] = useState(24);
+    const [warningSettings, setWarningSettings] = useState({
+        stage_warning_days: {
+            'booked': 3,
+            'follow-up': 2,
+            'preparing': 7,
+            'testing': 30, // 30 days for testing stage
+            'running': 0
+        },
+        warning_color: '#f59e0b',
+        danger_color: '#ef4444'
+    });
     const [isExpanded, setIsExpanded] = useState(true);
 
     useEffect(() => {
@@ -14,63 +23,77 @@ const DeadlineAlerts = ({ clients, onViewClient, onEditClient }) => {
             const saved = localStorage.getItem('warning_settings');
             if (saved) {
                 const settings = JSON.parse(saved);
-                if (settings.response_deadline_hours) {
-                    setResponseDeadlineHours(settings.response_deadline_hours);
-                }
+                setWarningSettings(prev => ({
+                    ...prev,
+                    ...settings,
+                    stage_warning_days: {
+                        ...prev.stage_warning_days,
+                        ...(settings.stage_warning_days || {})
+                    }
+                }));
             }
         } catch (e) {
             console.log('Could not load warning settings:', e);
         }
     }, []);
 
-    // Calculate deadline info for a client
-    const getDeadlineInfo = (client) => {
-        const lastActivityDate = client.lastActivity ? new Date(client.lastActivity) :
-            client.created_at ? new Date(client.created_at) : null;
+    // Calculate if client has exceeded stage deadline
+    const getStageDeadlineInfo = (client) => {
+        if (!client.phase) return null;
 
-        if (!lastActivityDate) {
-            return null;
-        }
+        const thresholdDays = warningSettings.stage_warning_days[client.phase];
+        if (!thresholdDays || thresholdDays <= 0) return null;
 
+        // Use stageEnteredAt, phaseChangedAt, createdAt, or created_at
+        const stageDate = client.stageEnteredAt || client.phaseChangedAt || client.createdAt || client.created_at;
+        if (!stageDate) return null;
+
+        const enteredAt = new Date(stageDate);
         const now = new Date();
-        const deadlineMs = responseDeadlineHours * 60 * 60 * 1000;
-        const deadline = new Date(lastActivityDate.getTime() + deadlineMs);
-        const timeLeftMs = deadline - now;
-        const hoursLeft = timeLeftMs / (1000 * 60 * 60);
-        const percentLeft = hoursLeft / responseDeadlineHours;
+        const daysInStage = Math.floor((now - enteredAt) / (1000 * 60 * 60 * 24));
+        const daysRemaining = thresholdDays - daysInStage;
+
+        // Calculate percentage for color coding
+        const percentUsed = daysInStage / thresholdDays;
 
         // Already overdue
-        if (timeLeftMs <= 0) {
-            const overdueHours = Math.abs(timeLeftMs / (1000 * 60 * 60));
+        if (daysRemaining <= 0) {
             return {
-                text: overdueHours > 24 ? `${Math.floor(overdueHours / 24)}d overdue` : `${Math.floor(overdueHours)}h overdue`,
-                color: 'var(--error)',
+                text: `${Math.abs(daysRemaining)}d overdue`,
+                daysInStage,
+                thresholdDays,
+                color: warningSettings.danger_color,
                 priority: 3,
                 isUrgent: true
             };
         }
 
-        // Less than 50% time left = urgent
-        if (percentLeft < 0.5) {
-            const text = hoursLeft < 1
-                ? `${Math.floor(timeLeftMs / (1000 * 60))}m left`
-                : `${Math.floor(hoursLeft)}h left`;
-
+        // Less than 20% time remaining - critical
+        if (percentUsed >= 0.8) {
             return {
-                text,
-                color: percentLeft < 0.1 ? 'var(--error)' : 'var(--warning)',
-                priority: percentLeft < 0.1 ? 2 : 1,
+                text: `${daysRemaining}d left`,
+                daysInStage,
+                thresholdDays,
+                color: warningSettings.danger_color,
+                priority: 2,
                 isUrgent: true
             };
         }
 
-        // Not urgent
-        return {
-            text: `${Math.floor(hoursLeft)}h left`,
-            color: 'var(--success)',
-            priority: 0,
-            isUrgent: false
-        };
+        // 50-80% time used - warning
+        if (percentUsed >= 0.5) {
+            return {
+                text: `${daysRemaining}d left`,
+                daysInStage,
+                thresholdDays,
+                color: warningSettings.warning_color,
+                priority: 1,
+                isUrgent: true
+            };
+        }
+
+        // Still have time - not urgent, don't show
+        return null;
     };
 
     // Filter and sort clients with urgent deadlines
@@ -78,23 +101,19 @@ const DeadlineAlerts = ({ clients, onViewClient, onEditClient }) => {
         return clients
             .map(client => ({
                 ...client,
-                deadlineInfo: getDeadlineInfo(client)
+                deadlineInfo: getStageDeadlineInfo(client)
             }))
             .filter(client => client.deadlineInfo?.isUrgent)
             .sort((a, b) => b.deadlineInfo.priority - a.deadlineInfo.priority);
-    }, [clients, responseDeadlineHours]);
+    }, [clients, warningSettings]);
 
-    // Don't render if no urgent deadlines
-    if (urgentClients.length === 0) {
-        return null;
-    }
-
+    // Always show component with message if no urgent clients
     return (
         <div style={{
             margin: '0 1.5rem 1rem',
             background: 'var(--bg-secondary)',
             borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--error)',
+            border: urgentClients.length > 0 ? '1px solid var(--error)' : '1px solid var(--border-color)',
             overflow: 'hidden'
         }}>
             {/* Header */}
@@ -102,28 +121,28 @@ const DeadlineAlerts = ({ clients, onViewClient, onEditClient }) => {
                 onClick={() => setIsExpanded(!isExpanded)}
                 style={{
                     padding: '0.75rem 1rem',
-                    background: 'rgba(239, 68, 68, 0.1)',
+                    background: urgentClients.length > 0 ? 'rgba(239, 68, 68, 0.1)' : 'var(--bg-tertiary)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     cursor: 'pointer',
-                    borderBottom: isExpanded ? '1px solid var(--border-color)' : 'none'
+                    borderBottom: isExpanded && urgentClients.length > 0 ? '1px solid var(--border-color)' : 'none'
                 }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <span style={{ fontSize: '1.25rem' }}>⏰</span>
-                    <h4 style={{ margin: 0, color: 'var(--error)' }}>
-                        Deadline Alerts
+                    <h4 style={{ margin: 0, color: urgentClients.length > 0 ? 'var(--error)' : 'var(--text-primary)' }}>
+                        Pipeline Deadline Alerts
                     </h4>
                     <span style={{
-                        background: 'var(--error)',
+                        background: urgentClients.length > 0 ? 'var(--error)' : 'var(--success)',
                         color: 'white',
                         padding: '0.125rem 0.5rem',
                         borderRadius: '999px',
                         fontSize: '0.75rem',
                         fontWeight: 'bold'
                     }}>
-                        {urgentClients.length}
+                        {urgentClients.length > 0 ? urgentClients.length : '✓'}
                     </span>
                 </div>
                 <span style={{ color: 'var(--text-muted)' }}>
@@ -131,86 +150,103 @@ const DeadlineAlerts = ({ clients, onViewClient, onEditClient }) => {
                 </span>
             </div>
 
-            {/* Table */}
+            {/* Content */}
             {isExpanded && (
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                            <tr style={{ background: 'var(--bg-tertiary)' }}>
-                                <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Client</th>
-                                <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Business</th>
-                                <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Phase</th>
-                                <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Deadline</th>
-                                <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {urgentClients.map(client => (
-                                <tr
-                                    key={client.id}
-                                    style={{
-                                        borderBottom: '1px solid var(--border-color)',
-                                        background: client.deadlineInfo.priority >= 2 ? 'rgba(239, 68, 68, 0.05)' : 'transparent'
-                                    }}
-                                >
-                                    <td style={{ padding: '0.75rem 1rem' }}>
-                                        <span style={{ fontWeight: '500' }}>{client.clientName || '—'}</span>
-                                    </td>
-                                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>
-                                        {client.businessName || '—'}
-                                    </td>
-                                    <td style={{ padding: '0.75rem 1rem' }}>
-                                        <span style={{
-                                            padding: '0.25rem 0.5rem',
-                                            borderRadius: '4px',
-                                            fontSize: '0.75rem',
-                                            background: 'var(--bg-tertiary)'
-                                        }}>
-                                            {client.phase === 'booked' && '📅 Booked'}
-                                            {client.phase === 'follow-up' && '📞 Follow Up'}
-                                            {client.phase === 'preparing' && '⏳ Preparing'}
-                                            {client.phase === 'testing' && '🧪 Testing'}
-                                            {client.phase === 'running' && '🚀 Running'}
-                                            {!['booked', 'follow-up', 'preparing', 'testing', 'running'].includes(client.phase) && (client.phase || '—')}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '0.75rem 1rem' }}>
-                                        <span style={{
-                                            padding: '0.25rem 0.75rem',
-                                            borderRadius: '4px',
-                                            fontSize: '0.875rem',
-                                            fontWeight: '600',
-                                            color: client.deadlineInfo.color,
-                                            background: `${client.deadlineInfo.color}20`
-                                        }}>
-                                            {client.deadlineInfo.text}
-                                        </span>
-                                    </td>
-                                    <td style={{ padding: '0.75rem 1rem' }}>
-                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                            <button
-                                                className="btn btn-sm btn-secondary"
-                                                onClick={() => onViewClient(client.id)}
-                                                title="View Client"
-                                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                                            >
-                                                👁️
-                                            </button>
-                                            <button
-                                                className="btn btn-sm btn-primary"
-                                                onClick={() => onEditClient(client.id)}
-                                                title="Edit Client"
-                                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                                            >
-                                                ✏️
-                                            </button>
-                                        </div>
-                                    </td>
+                urgentClients.length === 0 ? (
+                    <div style={{
+                        padding: '1rem',
+                        textAlign: 'center',
+                        color: 'var(--text-muted)',
+                        fontSize: '0.875rem'
+                    }}>
+                        ✅ All clients are within their stage deadlines
+                    </div>
+                ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                                <tr style={{ background: 'var(--bg-tertiary)' }}>
+                                    <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Client</th>
+                                    <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Business</th>
+                                    <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Phase</th>
+                                    <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Time in Stage</th>
+                                    <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Deadline</th>
+                                    <th style={{ padding: '0.5rem 1rem', textAlign: 'left', fontSize: '0.75rem', color: 'var(--text-muted)' }}>Actions</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {urgentClients.map(client => (
+                                    <tr
+                                        key={client.id}
+                                        style={{
+                                            borderBottom: '1px solid var(--border-color)',
+                                            background: client.deadlineInfo.priority >= 2 ? 'rgba(239, 68, 68, 0.05)' : 'transparent'
+                                        }}
+                                    >
+                                        <td style={{ padding: '0.75rem 1rem' }}>
+                                            <span style={{ fontWeight: '500' }}>{client.clientName || '—'}</span>
+                                        </td>
+                                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>
+                                            {client.businessName || '—'}
+                                        </td>
+                                        <td style={{ padding: '0.75rem 1rem' }}>
+                                            <span style={{
+                                                padding: '0.25rem 0.5rem',
+                                                borderRadius: '4px',
+                                                fontSize: '0.75rem',
+                                                background: 'var(--bg-tertiary)'
+                                            }}>
+                                                {client.phase === 'booked' && '📅 Booked'}
+                                                {client.phase === 'follow-up' && '📞 Follow Up'}
+                                                {client.phase === 'preparing' && '⏳ Preparing'}
+                                                {client.phase === 'testing' && '🧪 Testing'}
+                                                {client.phase === 'running' && '🚀 Running'}
+                                                {!['booked', 'follow-up', 'preparing', 'testing', 'running'].includes(client.phase) && (client.phase || '—')}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '0.75rem 1rem' }}>
+                                            <span style={{ fontSize: '0.875rem' }}>
+                                                {client.deadlineInfo.daysInStage}d / {client.deadlineInfo.thresholdDays}d
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '0.75rem 1rem' }}>
+                                            <span style={{
+                                                padding: '0.25rem 0.75rem',
+                                                borderRadius: '4px',
+                                                fontSize: '0.875rem',
+                                                fontWeight: '600',
+                                                color: client.deadlineInfo.color,
+                                                background: `${client.deadlineInfo.color}20`
+                                            }}>
+                                                {client.deadlineInfo.text}
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '0.75rem 1rem' }}>
+                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                <button
+                                                    className="btn btn-sm btn-secondary"
+                                                    onClick={() => onViewClient(client.id)}
+                                                    title="View Client"
+                                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                                >
+                                                    👁️
+                                                </button>
+                                                <button
+                                                    className="btn btn-sm btn-primary"
+                                                    onClick={() => onEditClient(client.id)}
+                                                    title="Edit Client"
+                                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                                >
+                                                    ✏️
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )
             )}
         </div>
     );

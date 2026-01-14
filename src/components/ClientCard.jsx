@@ -64,14 +64,32 @@ const getStageWarning = (client, warningSettings) => {
 };
 
 const ClientCard = ({ client, onView, onEdit }) => {
-  const [warningSettings, setWarningSettings] = useState({});
+  const [warningSettings, setWarningSettings] = useState({
+    stage_warning_days: {
+      'booked': 3,
+      'follow-up': 2,
+      'preparing': 7,
+      'testing': 30,
+      'running': 0
+    },
+    warning_color: '#f59e0b',
+    danger_color: '#ef4444'
+  });
 
   // Load warning settings from localStorage
   useEffect(() => {
     try {
       const saved = localStorage.getItem('warning_settings');
       if (saved) {
-        setWarningSettings(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setWarningSettings(prev => ({
+          ...prev,
+          ...parsed,
+          stage_warning_days: {
+            ...prev.stage_warning_days,
+            ...(parsed.stage_warning_days || {})
+          }
+        }));
       }
     } catch (e) {
       console.log('Could not load warning settings');

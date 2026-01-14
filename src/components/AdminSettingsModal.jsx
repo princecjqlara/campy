@@ -67,7 +67,7 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
       'booked': 3,      // Warn if in Booked for more than 3 days
       'follow-up': 2,   // Warn if in Follow Up for more than 2 days
       'preparing': 7,   // Warn if in Preparing for more than 7 days
-      'testing': 14,    // Warn if in Testing for more than 14 days
+      'testing': 30,    // Warn if in Testing for more than 30 days
       'running': 0      // No warning for Running (0 = disabled)
     }
   });
