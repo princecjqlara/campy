@@ -2274,13 +2274,154 @@ Always ask for the customer's name and business type early in the conversation.`
                     </div>
                   ))}
                 </div>
+
+                {/* Custom Goals */}
+                <div style={{ marginTop: '1rem' }}>
+                  <label className="form-label">➕ Custom Goals (one per line)</label>
+                  <textarea
+                    className="form-input"
+                    rows={3}
+                    placeholder={`Add your own goals, e.g.:
+- Get customer's Facebook page URL
+- Ask about their monthly ad budget
+- Collect their preferred contact time`}
+                    defaultValue={(() => {
+                      try {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        return config.custom_goals || '';
+                      } catch { return ''; }
+                    })()}
+                    onChange={(e) => {
+                      const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                      config.custom_goals = e.target.value;
+                      localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                    }}
+                    style={{ resize: 'vertical', fontSize: '0.875rem' }}
+                  />
+                </div>
               </div>
 
-              {/* Booking Link */}
+              {/* AI Behavior Controls */}
               <div style={{ marginBottom: '2rem' }}>
-                <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>🔗 Booking Link</h5>
-                <div className="form-group">
-                  <label className="form-label">URL for booking appointments</label>
+                <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>🔄 AI Behavior Controls</h5>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                  Control how the AI re-engages and when it should stop
+                </p>
+
+                <div style={{ display: 'grid', gap: '0.75rem' }}>
+                  {/* Stop on Goal Reached */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                    <div>
+                      <span>🛑 Stop AI when goal is reached</span>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>AI stops messaging after achieving the conversation goal</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      defaultChecked={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.stop_on_goal_reached !== false;
+                        } catch { return true; }
+                      })()}
+                      onChange={(e) => {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        config.stop_on_goal_reached = e.target.checked;
+                        localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                      }}
+                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                    />
+                  </div>
+
+                  {/* AI Re-entry */}
+                  <div style={{ padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                      <span>🔄 AI Re-entry Mode</span>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                      When should AI resume after human takeover or pause?
+                    </div>
+                    <select
+                      className="form-input"
+                      defaultValue={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.ai_reentry_mode || 'manual';
+                        } catch { return 'manual'; }
+                      })()}
+                      onChange={(e) => {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        config.ai_reentry_mode = e.target.value;
+                        localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                      }}
+                      style={{ fontSize: '0.875rem' }}
+                    >
+                      <option value="manual">Manual only - User must re-enable AI</option>
+                      <option value="after_24h">Auto after 24h silence</option>
+                      <option value="after_48h">Auto after 48h silence</option>
+                      <option value="after_7d">Auto after 7 days silence</option>
+                      <option value="never">Never - AI stays off once paused</option>
+                    </select>
+                  </div>
+
+                  {/* AI-Generated Follow-ups */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                    <div>
+                      <span>✨ AI-Generated Follow-ups</span>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Let AI create contextual follow-ups based on conversation</div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      defaultChecked={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.ai_generated_followups === true;
+                        } catch { return false; }
+                      })()}
+                      onChange={(e) => {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        config.ai_generated_followups = e.target.checked;
+                        localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                      }}
+                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Booking & Calendar */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>📅 Booking & Calendar</h5>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                  Configure how AI handles appointment booking
+                </p>
+
+                {/* Booking Mode */}
+                <div style={{ marginBottom: '1rem' }}>
+                  <label className="form-label">Booking Mode</label>
+                  <select
+                    className="form-input"
+                    defaultValue={(() => {
+                      try {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        return config.booking_mode || 'link';
+                      } catch { return 'link'; }
+                    })()}
+                    onChange={(e) => {
+                      const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                      config.booking_mode = e.target.value;
+                      localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                    }}
+                    style={{ fontSize: '0.875rem' }}
+                  >
+                    <option value="link">📎 Share booking link only</option>
+                    <option value="auto_book">📅 Auto-book to team calendar</option>
+                    <option value="suggest_times">⏰ AI suggests available times, user confirms</option>
+                  </select>
+                </div>
+
+                {/* Booking URL */}
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label className="form-label">Booking Link URL</label>
                   <input
                     type="url"
                     className="form-input"
@@ -2297,9 +2438,102 @@ Always ask for the customer's name and business type early in the conversation.`
                       localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
                     }}
                   />
-                  <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                    The AI will share this link when trying to book meetings
-                  </small>
+                </div>
+
+                {/* Auto-book Settings */}
+                <div style={{ padding: '1rem', background: 'rgba(99, 102, 241, 0.05)', borderRadius: 'var(--radius-md)', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                  <div style={{ fontWeight: 500, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>📅 Auto-Book Settings</div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Default Meeting Duration</label>
+                      <select
+                        className="form-input"
+                        defaultValue={(() => {
+                          try {
+                            const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                            return config.default_meeting_duration || '30';
+                          } catch { return '30'; }
+                        })()}
+                        onChange={(e) => {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          config.default_meeting_duration = e.target.value;
+                          localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                        }}
+                        style={{ fontSize: '0.875rem' }}
+                      >
+                        <option value="15">15 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="45">45 minutes</option>
+                        <option value="60">1 hour</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Assign Booking To</label>
+                      <select
+                        className="form-input"
+                        defaultValue={(() => {
+                          try {
+                            const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                            return config.assign_booking_to || 'assigned_user';
+                          } catch { return 'assigned_user'; }
+                        })()}
+                        onChange={(e) => {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          config.assign_booking_to = e.target.value;
+                          localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                        }}
+                        style={{ fontSize: '0.875rem' }}
+                      >
+                        <option value="assigned_user">Contact's assigned user</option>
+                        <option value="round_robin">Round robin (team)</option>
+                        <option value="least_busy">Least busy team member</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        defaultChecked={(() => {
+                          try {
+                            const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                            return config.send_calendar_invite !== false;
+                          } catch { return true; }
+                        })()}
+                        onChange={(e) => {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          config.send_calendar_invite = e.target.checked;
+                          localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                        }}
+                        style={{ width: '16px', height: '16px' }}
+                      />
+                      <span style={{ fontSize: '0.875rem' }}>Send calendar invite to customer</span>
+                    </label>
+                  </div>
+
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        defaultChecked={(() => {
+                          try {
+                            const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                            return config.confirm_before_booking === true;
+                          } catch { return false; }
+                        })()}
+                        onChange={(e) => {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          config.confirm_before_booking = e.target.checked;
+                          localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                        }}
+                        style={{ width: '16px', height: '16px' }}
+                      />
+                      <span style={{ fontSize: '0.875rem' }}>Ask for confirmation before finalizing booking</span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
