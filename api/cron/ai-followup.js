@@ -18,12 +18,14 @@ function getSupabase() {
 }
 
 export default async function handler(req, res) {
-    // Verify cron authorization
+    // Verify cron authorization (optional - only checked if CRON_SECRET is set)
     const authHeader = req.headers.authorization;
+    const vercelCron = req.headers['x-vercel-cron']; // Vercel's built-in cron header
     const cronSecret = process.env.CRON_SECRET;
 
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-        console.log('[CRON] Unauthorized request');
+    // Skip auth if Vercel cron OR if no secret is configured
+    if (cronSecret && !vercelCron && authHeader !== `Bearer ${cronSecret}`) {
+        console.log('[CRON] Unauthorized request - missing valid auth');
         return res.status(401).json({ error: 'Unauthorized' });
     }
 
