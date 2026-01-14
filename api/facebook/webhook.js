@@ -312,9 +312,238 @@ async function handleIncomingMessage(pageId, event) {
         } else {
             console.log(`[WEBHOOK] Message ${message.mid} saved successfully`);
         }
+
+        // TRIGGER AI AUTO-RESPONSE for incoming messages (not echoes)
+        if (!isFromPage && message.text) {
+            console.log('[WEBHOOK] Triggering AI auto-response check...');
+            await triggerAIResponse(db, conversationId, pageId, existingConv);
+        }
     } catch (error) {
         console.error('[WEBHOOK] Exception in handleIncomingMessage:', error);
     }
+}
+
+/**
+ * Trigger AI auto-response for a conversation
+ */
+async function triggerAIResponse(db, conversationId, pageId, conversation) {
+    try {
+        // Check if AI is enabled globally (from settings)
+        const { data: settings } = await db
+            .from('settings')
+            .select('value')
+            .eq('key', 'ai_chatbot_config')
+            .single();
+
+        const config = settings?.value || {};
+
+        // Check if auto-respond is enabled (default: true)
+        if (config.auto_respond_to_new_messages === false) {
+            console.log('[WEBHOOK] AI auto-respond is disabled globally');
+            return;
+        }
+
+        // Check if AI is enabled for this specific conversation
+        if (conversation?.ai_enabled === false) {
+            console.log('[WEBHOOK] AI is disabled for this conversation');
+            return;
+        }
+
+        // Check if in human takeover mode
+        if (conversation?.human_takeover === true) {
+            console.log('[WEBHOOK] Conversation is in human takeover mode');
+            return;
+        }
+
+        // Check cooldown
+        if (conversation?.cooldown_until) {
+            const cooldownUntil = new Date(conversation.cooldown_until);
+            if (cooldownUntil > new Date()) {
+                console.log(`[WEBHOOK] AI on cooldown until ${cooldownUntil.toISOString()}`);
+                return;
+            }
+        }
+
+        // Get page access token
+        const { data: page } = await db
+            .from('facebook_pages')
+            .select('page_access_token')
+            .eq('page_id', pageId)
+            .single();
+
+        if (!page?.page_access_token) {
+            console.error('[WEBHOOK] No page access token found');
+            return;
+        }
+
+        // Get recent messages for context
+        const { data: messages } = await db
+            .from('facebook_messages')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .order('timestamp', { ascending: false })
+            .limit(20);
+
+        const recentMessages = (messages || []).reverse();
+
+        // Get knowledge base from settings
+        const knowledgeBase = config.knowledge_base || '';
+        const systemPrompt = config.system_prompt || 'You are a friendly AI assistant.';
+        const botRulesDos = config.bot_rules_dos || '';
+        const botRulesDonts = config.bot_rules_donts || '';
+        const bookingUrl = config.booking_url || '';
+
+        // Build AI prompt
+        const aiSystemPrompt = buildAIPrompt({
+            systemPrompt,
+            knowledgeBase,
+            botRulesDos,
+            botRulesDonts,
+            bookingUrl,
+            participantName: conversation?.participant_name,
+            extractedDetails: conversation?.extracted_details,
+            summary: conversation?.summary
+        });
+
+        // Format messages for AI
+        const aiMessages = [
+            { role: 'system', content: aiSystemPrompt }
+        ];
+
+        for (const msg of recentMessages) {
+            const role = msg.is_from_page ? 'assistant' : 'user';
+            const content = msg.message_text || '[Attachment]';
+            aiMessages.push({ role, content });
+        }
+
+        // Call NVIDIA AI API
+        const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || process.env.VITE_NVIDIA_API_KEY;
+        if (!NVIDIA_API_KEY) {
+            console.error('[WEBHOOK] NVIDIA API key not configured');
+            return;
+        }
+
+        console.log('[WEBHOOK] Calling NVIDIA AI...');
+        const aiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${NVIDIA_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: 'nvidia/llama-3.1-nemotron-70b-instruct',
+                messages: aiMessages,
+                temperature: 0.7,
+                max_tokens: 500
+            })
+        });
+
+        if (!aiResponse.ok) {
+            const errorText = await aiResponse.text();
+            console.error('[WEBHOOK] NVIDIA API error:', errorText);
+            return;
+        }
+
+        const aiData = await aiResponse.json();
+        const aiReply = aiData.choices?.[0]?.message?.content;
+
+        if (!aiReply) {
+            console.error('[WEBHOOK] No AI reply generated');
+            return;
+        }
+
+        console.log('[WEBHOOK] AI Reply:', aiReply.substring(0, 100) + '...');
+
+        // Send via Facebook Messenger API
+        const participantId = conversation?.participant_id || conversationId.replace('t_', '');
+        const sendResponse = await fetch(
+            `https://graph.facebook.com/v18.0/${pageId}/messages?access_token=${page.page_access_token}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    recipient: { id: participantId },
+                    message: { text: aiReply },
+                    messaging_type: 'RESPONSE'
+                })
+            }
+        );
+
+        if (!sendResponse.ok) {
+            const sendError = await sendResponse.text();
+            console.error('[WEBHOOK] Failed to send AI reply:', sendError);
+            return;
+        }
+
+        const sendResult = await sendResponse.json();
+        console.log('[WEBHOOK] AI reply sent successfully:', sendResult.message_id);
+
+        // Set cooldown (default 4 hours)
+        const cooldownHours = config.default_cooldown_hours || 4;
+        const cooldownUntil = new Date(Date.now() + cooldownHours * 60 * 60 * 1000);
+
+        await db
+            .from('facebook_conversations')
+            .update({
+                cooldown_until: cooldownUntil.toISOString(),
+                last_ai_message_time: new Date().toISOString()
+            })
+            .eq('conversation_id', conversationId);
+
+        console.log(`[WEBHOOK] Cooldown set until ${cooldownUntil.toISOString()}`);
+
+    } catch (error) {
+        console.error('[WEBHOOK] Error in AI auto-response:', error);
+    }
+}
+
+/**
+ * Build AI system prompt from config
+ */
+function buildAIPrompt({ systemPrompt, knowledgeBase, botRulesDos, botRulesDonts, bookingUrl, participantName, extractedDetails, summary }) {
+    let prompt = `## Role and Personality:
+${systemPrompt}
+
+## Context:
+- Platform: Facebook Messenger
+- Contact Name: ${participantName || 'Unknown'}
+`;
+
+    if (knowledgeBase) {
+        prompt += `\n## Knowledge Base:\n${knowledgeBase}\n`;
+    }
+
+    if (extractedDetails && Object.keys(extractedDetails).length > 0) {
+        prompt += '\n## Customer Details:';
+        if (extractedDetails.businessName) prompt += `\n- Business: ${extractedDetails.businessName}`;
+        if (extractedDetails.niche) prompt += `\n- Industry: ${extractedDetails.niche}`;
+        if (extractedDetails.phone) prompt += `\n- Phone: ${extractedDetails.phone}`;
+        if (extractedDetails.email) prompt += `\n- Email: ${extractedDetails.email}`;
+        prompt += '\n';
+    }
+
+    if (summary) {
+        prompt += `\n## Conversation Summary:\n${summary}\n`;
+    }
+
+    if (botRulesDos) {
+        prompt += `\n## DO's:\n${botRulesDos}\n`;
+    }
+
+    if (botRulesDonts) {
+        prompt += `\n## DON'Ts:\n${botRulesDonts}\n`;
+    }
+
+    if (bookingUrl) {
+        prompt += `\n## Booking Link:\nShare this when customer wants to book: ${bookingUrl}\n`;
+    }
+
+    prompt += `\n## Important:
+- Keep responses concise (this is chat, not email)
+- If unsure, say you'll have the team follow up
+`;
+
+    return prompt;
 }
 
 // Vercel config
