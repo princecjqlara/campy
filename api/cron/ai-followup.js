@@ -227,7 +227,7 @@ export default async function handler(req, res) {
                     .select('message_text, is_from_page, timestamp')
                     .eq('conversation_id', conv.conversation_id)
                     .order('timestamp', { ascending: false })
-                    .limit(5);
+                    .limit(20);
 
                 // Use AI to analyze conversation and determine follow-up timing
                 let analysis = { wait_hours: 24, reason: `No response for ${hoursSince} hours`, follow_up_type: 'gentle_reminder' };
