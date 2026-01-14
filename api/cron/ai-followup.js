@@ -232,8 +232,8 @@ export default async function handler(req, res) {
                     .limit(20);
 
                 // Use AI to analyze conversation and determine follow-up timing
-                // Default: AGGRESSIVE 2 hours wait
-                let analysis = { wait_hours: 2, reason: `No response for ${hoursSince} hours - urgent follow-up`, follow_up_type: 'best_time' };
+                // Default: AGGRESSIVE 30 MINUTES wait
+                let analysis = { wait_minutes: 30, reason: `No response for ${hoursSince}h - urgent follow-up`, follow_up_type: 'best_time' };
 
                 if (recentMessages && recentMessages.length > 0) {
                     const nvidiaKey = process.env.NVIDIA_API_KEY;
@@ -244,35 +244,38 @@ export default async function handler(req, res) {
                                 `${m.is_from_page ? 'AI' : 'Customer'}: ${m.message_text || '[attachment]'}`
                             ).join('\n');
 
-                            // ALWAYS be aggressive - max 6 hour wait
-                            const maxWaitHours = 6;
-                            const aggressiveNote = '\n\n⚡ ALWAYS BE AGGRESSIVE! Use SHORT wait times (1-4 hours max). Keep leads warm!';
+                            // Calculate minutes since last activity for AI context
+                            const minutesSince = Math.floor((now - new Date(conv.last_message_time)) / (1000 * 60));
 
-                            const analysisPrompt = `You are an AGGRESSIVE sales AI. Your job is to keep leads WARM by following up QUICKLY.
+                            const analysisPrompt = `You are an ULTRA-AGGRESSIVE sales AI. Your job is to keep leads HOT by following up in MINUTES, not hours!
 
-CONVERSATION (last activity ${hoursSince} hours ago):
+CONVERSATION (last activity ${minutesSince} minutes ago):
 ${messagesSummary}
-${aggressiveNote}
+
+⚡ KEEP THIS LEAD WARM! If they go cold, we lose them!
 
 You must respond with ONLY valid JSON (no markdown, no explanation):
 {
   "skip_followup": <true/false>,
-  "skip_reason": "<if skip_followup is true, explain why>",
-  "wait_hours": <number between 0.5-6>,
+  "skip_reason": "<if skip is true, why>",
+  "wait_minutes": <number between 5-120>,
   "reason": "<brief explanation>"
 }
 
-WHEN TO SKIP (skip_followup: true):
-- Customer said "I'll message you later" or "I'll get back to you"
-- Customer specified a time like "call me tomorrow at 2pm"
-- Customer said they're busy ("in a meeting", "busy today")
+WHEN TO SKIP:
+- Customer said they'll message later
+- Customer is busy (in a meeting, etc.)
+- Already booked/converted
 
-AGGRESSIVE TIMING (MAX 6 HOURS):
-- Any silence: wait 1-3 hours (DEFAULT)
-- Showed buying intent: wait 0.5-1 hour (URGENT!)
-- Was about to book: wait 0.5 hour (IMMEDIATE!)
-- Just received pricing: wait 1-2 hours
-- Asked questions: wait 1 hour`;
+ULTRA-AGGRESSIVE TIMING (IN MINUTES!):
+- Silent 5-15 mins: wait 5-10 mins (they might be typing)
+- Silent 15-30 mins: wait 10-15 mins (quick check-in)
+- Silent 30-60 mins: wait 15-30 mins (are you still there?)  
+- Silent 1-2 hours: wait 30-60 mins (let me know if busy)
+- Silent 2+ hours: wait 60-120 mins (following up)
+- Showed buying intent: wait 5-10 mins (DON'T LET THEM GO!)
+- Was about to book: wait 5 mins (IMMEDIATE!)
+- Asked questions: wait 10-15 mins`;
 
                             const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
                                 method: 'POST',
@@ -296,26 +299,29 @@ AGGRESSIVE TIMING (MAX 6 HOURS):
 
                                 // Check if AI says to skip follow-up
                                 if (parsed.skip_followup === true) {
-                                    console.log(`[CRON] ⏸️ SKIPPING ${conv.participant_name}: ${parsed.skip_reason || 'Customer specified callback time or busy'} `);
+                                    console.log(`[CRON] ⏸️ SKIPPING ${conv.participant_name}: ${parsed.skip_reason || 'Customer specified callback time or busy'}`);
                                     results.skipped++;
                                     continue; // Skip to next conversation
                                 }
 
+                                // Use MINUTES for ultra-aggressive follow-up
+                                const waitMinutes = Math.min(Math.max(parsed.wait_minutes || 30, 5), 120);
                                 analysis = {
-                                    wait_hours: Math.min(Math.max(parsed.wait_hours || 2, 0.5), 24),
-                                    reason: parsed.reason || `Silent for ${hoursSince} hours`,
-                                    follow_up_type: parsed.follow_up_type || 'gentle_reminder'
+                                    wait_minutes: waitMinutes,
+                                    reason: parsed.reason || `Silent for ${minutesSince} mins - urgent follow-up`,
+                                    follow_up_type: 'best_time'
                                 };
-                                console.log(`[CRON] 🔥 AI analysis for ${conv.participant_name}: wait ${analysis.wait_hours} h - ${analysis.reason} `);
+                                console.log(`[CRON] 🔥 AI analysis for ${conv.participant_name}: wait ${waitMinutes} MINS - ${analysis.reason}`);
                             }
                         } catch (aiErr) {
-                            console.log(`[CRON] AI analysis error(using defaults): `, aiErr.message);
+                            console.log(`[CRON] AI analysis error (using 30 min default):`, aiErr.message);
                         }
                     }
                 }
 
-                // Calculate scheduled time based on AI analysis
-                const scheduledAt = new Date(now.getTime() + analysis.wait_hours * 60 * 60 * 1000);
+                // Calculate scheduled time based on AI analysis - USE MINUTES
+                const waitMs = (analysis.wait_minutes || 30) * 60 * 1000;
+                const scheduledAt = new Date(now.getTime() + waitMs);
 
                 // Create follow-up with AI-determined timing
                 const { error: insertError } = await db
@@ -330,10 +336,10 @@ AGGRESSIVE TIMING (MAX 6 HOURS):
                     });
 
                 if (insertError) {
-                    console.error(`[CRON] Error scheduling for ${conv.conversation_id}: `, insertError);
+                    console.error(`[CRON] Error scheduling for ${conv.conversation_id}:`, insertError);
                     results.skipped++;
                 } else {
-                    console.log(`[CRON] ✅ Scheduled intelligent follow - up for ${conv.participant_name || conv.conversation_id} in ${analysis.wait_hours}h`);
+                    console.log(`[CRON] ✅ Scheduled follow-up for ${conv.participant_name || conv.conversation_id} in ${analysis.wait_minutes} MINS`);
                     results.scheduled++;
 
                     // Log the action
@@ -341,7 +347,7 @@ AGGRESSIVE TIMING (MAX 6 HOURS):
                         conversation_id: conv.conversation_id,
                         page_id: conv.page_id,
                         action_type: 'silence_detected',
-                        action_data: { hoursSince, waitHours: analysis.wait_hours, reason: analysis.reason },
+                        action_data: { hoursSince, waitMinutes: analysis.wait_minutes, reason: analysis.reason },
                         explanation: `AI intuition: ${analysis.reason} `
                     });
                 }
