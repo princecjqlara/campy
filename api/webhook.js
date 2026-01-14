@@ -98,6 +98,8 @@ async function fetchFacebookUserName(userId, pageId) {
  * Handles verification (GET) and incoming messages (POST)
  */
 export default async function handler(req, res) {
+    console.log('[WEBHOOK] v2.0 - AI Auto-Response Enabled');
+
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
