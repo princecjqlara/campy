@@ -503,12 +503,13 @@ When customer wants to schedule/book, share this: ${config.booking_url}
 - If unsure about something, say you'll have a team member follow up
 - If user sends an image, describe what you see and respond appropriately
 
-## Message Format Rules
-- For SHORT responses (1-2 sentences): Just respond normally
-- For LONGER responses: Split your message using ||| as a separator between parts
-- Each part should be a complete thought that can stand alone
-- Example for multi-part response:
-  "Hi! Thanks for reaching out 😊 ||| Ang basic package natin is ₱1,799/month, kasama na lahat ng essentials. ||| Gusto mo ba malaman yung mga inclusions?"
+## ⚠️ MESSAGE SPLITTING RULES (VERY IMPORTANT - FOLLOW STRICTLY)
+- ALWAYS split your response into multiple messages for better chat experience
+- Use ||| to separate each message part
+- Each part should be 1-2 sentences MAX (like real texting)
+- EVERY response with more than 2 sentences MUST be split
+- Example: "Hi! 😊 ||| Ang basic package natin is ₱1,799/month. ||| Kasama na lahat ng essentials tulad ng: ||| - 2 videos ||| - 2 photos ||| - Ad management ||| Gusto mo ba malaman pa?"
+- Another example: "Hello po! ||| I'd be happy to help. ||| What specific service are you interested in?"
 `;
 
         // Build messages array, handling images for vision models

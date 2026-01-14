@@ -8,6 +8,55 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
   const [activeMainTab, setActiveMainTab] = useState('packages'); // packages, employees, facebook, booking
   const [activePageId, setActivePageId] = useState('default'); // Will be set from connected pages
 
+  // AI Chatbot stats
+  const [aiStats, setAiStats] = useState({
+    aiActive: 0,
+    humanTakeover: 0,
+    pendingFollowups: 0
+  });
+
+  // Fetch AI stats on mount
+  useEffect(() => {
+    const fetchAiStats = async () => {
+      try {
+        const supabaseUrl = localStorage.getItem('supabase_url') || import.meta.env.VITE_SUPABASE_URL;
+        const supabaseKey = localStorage.getItem('supabase_anon_key') || import.meta.env.VITE_SUPABASE_ANON_KEY;
+        if (!supabaseUrl || !supabaseKey) return;
+
+        const { createClient } = await import('@supabase/supabase-js');
+        const db = createClient(supabaseUrl, supabaseKey);
+
+        // Count AI Active (ai_enabled = true, human_takeover = false/null)
+        const { count: aiActiveCount } = await db
+          .from('facebook_conversations')
+          .select('*', { count: 'exact', head: true })
+          .or('ai_enabled.is.null,ai_enabled.eq.true')
+          .or('human_takeover.is.null,human_takeover.eq.false');
+
+        // Count Human Takeover
+        const { count: humanTakeoverCount } = await db
+          .from('facebook_conversations')
+          .select('*', { count: 'exact', head: true })
+          .eq('human_takeover', true);
+
+        // Count Pending Follow-ups
+        const { count: pendingFollowupsCount } = await db
+          .from('ai_followup_schedule')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending');
+
+        setAiStats({
+          aiActive: aiActiveCount || 0,
+          humanTakeover: humanTakeoverCount || 0,
+          pendingFollowups: pendingFollowupsCount || 0
+        });
+      } catch (err) {
+        console.log('Error fetching AI stats:', err);
+      }
+    };
+    fetchAiStats();
+  }, []);
+
   // Get the active Facebook page ID - use state if available, otherwise fallback to localStorage/default
   const getActivePageId = () => {
     if (activePageId && activePageId !== 'default') {
@@ -1903,15 +1952,15 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
               {/* Stats */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
                 <div style={{ background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: 'var(--radius-lg)', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--primary)' }}>-</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--primary)' }}>{aiStats.aiActive}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>AI Active</div>
                 </div>
                 <div style={{ background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: 'var(--radius-lg)', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--warning)' }}>-</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--warning)' }}>{aiStats.humanTakeover}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Human Takeover</div>
                 </div>
                 <div style={{ background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: 'var(--radius-lg)', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--info)' }}>-</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--info)' }}>{aiStats.pendingFollowups}</div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Pending Follow-ups</div>
                 </div>
               </div>
