@@ -110,11 +110,11 @@ const DeadlineAlerts = ({ clients, onViewClient, onEditClient }) => {
     // Always show component with message if no urgent clients
     return (
         <div style={{
-            margin: '0 1.5rem 1rem',
             background: 'var(--bg-secondary)',
             borderRadius: 'var(--radius-lg)',
             border: urgentClients.length > 0 ? '1px solid var(--error)' : '1px solid var(--border-color)',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            flex: 1
         }}>
             {/* Header */}
             <div

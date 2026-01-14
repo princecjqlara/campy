@@ -21,6 +21,7 @@ import AIAssistantWidget from './components/AIAssistantWidget';
 import BookingPage from './components/BookingPage';
 import TeamOnlinePanel from './components/TeamOnlinePanel';
 import DeadlineAlerts from './components/DeadlineAlerts';
+import UnassignedClientsPanel from './components/UnassignedClientsPanel';
 import { useSupabase } from './hooks/useSupabase';
 import { useScheduledMessageProcessor } from './hooks/useScheduledMessageProcessor';
 import { useClockInOut } from './hooks/useClockInOut';
@@ -490,12 +491,36 @@ function App() {
           {/* Clients Tab Content */}
           {activeMainTab === 'clients' && (
             <>
-              {/* Deadline Alerts - shows clients with urgent deadlines */}
-              <DeadlineAlerts
-                clients={clients}
-                onViewClient={handleOpenViewModal}
-                onEditClient={handleOpenEditModal}
-              />
+              {/* Alerts Row - Deadline Alerts + Unassigned Clients side by side */}
+              <div style={{
+                display: 'flex',
+                gap: '1rem',
+                margin: '0 1.5rem 1rem',
+                flexWrap: 'wrap'
+              }}>
+                <div style={{ flex: 1, minWidth: '300px' }}>
+                  <DeadlineAlerts
+                    clients={clients}
+                    onViewClient={handleOpenViewModal}
+                    onEditClient={handleOpenEditModal}
+                  />
+                </div>
+                <div style={{ flex: 1, minWidth: '300px' }}>
+                  <UnassignedClientsPanel
+                    clients={clients}
+                    users={allUsers}
+                    onAssign={async (clientId, userId) => {
+                      // Update client assignment
+                      const updatedClient = clients.find(c => c.id === clientId);
+                      if (updatedClient) {
+                        await updateClient(clientId, { assignedTo: userId });
+                      }
+                    }}
+                    onViewClient={handleOpenViewModal}
+                    onEditClient={handleOpenEditModal}
+                  />
+                </div>
+              </div>
 
               <StatsGrid metrics={metrics} role={role} />
 
