@@ -287,36 +287,22 @@ async function handleIncomingMessage(pageId, event) {
 
         let convError = null;
 
-        if (isNewConversation) {
-            // INSERT new conversation
-            console.log(`[WEBHOOK] Attempting to INSERT new conversation for participant ${participantId} on page ${pageId}`);
-            const { error, data } = await db
-                .from('facebook_conversations')
-                .insert(conversationData)
-                .select();
-            convError = error;
+        // Use UPSERT with conversation_id as conflict key (has UNIQUE constraint)
+        console.log(`[WEBHOOK] UPSERTING conversation ${conversationId} for participant ${participantId}`);
+        const { error, data } = await db
+            .from('facebook_conversations')
+            .upsert(conversationData, {
+                onConflict: 'conversation_id',
+                ignoreDuplicates: false
+            })
+            .select();
 
-            if (error) {
-                console.error(`[WEBHOOK] CONVERSATION INSERT FAILED:`, JSON.stringify(error));
-                console.error(`[WEBHOOK] Attempted to insert:`, JSON.stringify(conversationData));
-            } else {
-                console.log(`[WEBHOOK] NEW CONTACT: ${participantName || participantId} - AI enabled, goal=booking`);
-                console.log(`[WEBHOOK] Insert returned:`, data ? 'success' : 'no data');
-            }
-        } else {
-            // UPDATE existing conversation
-            const { error } = await db
-                .from('facebook_conversations')
-                .update(conversationData)
-                .eq('participant_id', participantId)
-                .eq('page_id', pageId);
-            convError = error;
-        }
+        convError = error;
 
-        if (convError) {
-            console.error('[WEBHOOK] Error saving conversation:', convError);
-            // CRITICAL: Don't continue to message save if conversation doesn't exist
-            console.error('[WEBHOOK] Aborting message save due to conversation error');
+        if (error) {
+            console.error(`[WEBHOOK] CONVERSATION UPSERT FAILED:`, JSON.stringify(error));
+            console.error(`[WEBHOOK] Data attempted:`, JSON.stringify(conversationData));
+            console.error('[WEBHOOK] Aborting - conversation not saved');
             return;
         }
 
