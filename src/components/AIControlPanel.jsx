@@ -412,6 +412,66 @@ export default function AIControlPanel({ conversationId, participantName, onClos
                                 </button>
                             </div>
 
+                            {/* Next Intuition Follow-up Section */}
+                            {(() => {
+                                const nextFollowUp = scheduledFollowUps?.find(f => f.status === 'pending');
+                                if (!nextFollowUp) return null;
+
+                                const scheduledDate = new Date(nextFollowUp.scheduled_for);
+                                const now = new Date();
+                                const diffMs = scheduledDate - now;
+                                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                                const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                                const isPast = diffMs < 0;
+
+                                return (
+                                    <div style={styles.section}>
+                                        <h3 style={styles.sectionTitle}>🔮 Next Intuition Follow-up</h3>
+                                        <div style={{
+                                            ...styles.statusCard,
+                                            background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%)',
+                                            border: '1px solid rgba(234, 179, 8, 0.3)'
+                                        }}>
+                                            <div style={styles.statusRow}>
+                                                <span>Scheduled For</span>
+                                                <span style={{ fontWeight: 500, color: '#fcd34d' }}>
+                                                    {scheduledDate.toLocaleString()}
+                                                </span>
+                                            </div>
+                                            <div style={styles.statusRow}>
+                                                <span>Time Remaining</span>
+                                                <span style={{
+                                                    ...styles.badge,
+                                                    background: isPast ? 'rgba(239, 68, 68, 0.3)' : 'rgba(234, 179, 8, 0.3)',
+                                                    color: isPast ? '#f87171' : '#fcd34d'
+                                                }}>
+                                                    {isPast ? 'Processing...' :
+                                                        diffHours > 0 ? `${diffHours}h ${diffMins}m` : `${diffMins}m`}
+                                                </span>
+                                            </div>
+                                            {nextFollowUp.followup_type && (
+                                                <div style={styles.statusRow}>
+                                                    <span>Type</span>
+                                                    <span style={{ fontSize: '13px', color: '#9ca3af' }}>
+                                                        {nextFollowUp.followup_type.replace(/_/g, ' ')}
+                                                    </span>
+                                                </div>
+                                            )}
+                                            <div style={{
+                                                fontSize: '11px',
+                                                color: '#9ca3af',
+                                                marginTop: '10px',
+                                                fontStyle: 'italic',
+                                                borderTop: '1px solid rgba(255,255,255,0.1)',
+                                                paddingTop: '10px'
+                                            }}>
+                                                ⚡ Updates automatically when customer messages
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
                             {bestTime && (
                                 <div style={styles.section}>
                                     <h3 style={styles.sectionTitle}>Best Times to Contact</h3>
