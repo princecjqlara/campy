@@ -273,31 +273,42 @@ async function handleIncomingMessage(pageId, event) {
         }
 
         // Look up existing conversation by participant_id first (matches synced conversations)
-        const { data: existingConv } = await db
+        console.log(`[WEBHOOK] STEP 1: Looking up existing conversation for participant ${participantId}`);
+        const { data: existingConv, error: convLookupError } = await db
             .from('facebook_conversations')
             .select('*')
             .eq('participant_id', participantId)
             .eq('page_id', pageId)
             .single();
 
+        console.log(`[WEBHOOK] STEP 1 RESULT: existing=${!!existingConv}, error=${convLookupError?.code || 'none'}`);
+
         // Get conversation_id - for new conversations, try to fetch the real one from Facebook
         let conversationId = existingConv?.conversation_id;
+        console.log(`[WEBHOOK] STEP 2: conversationId from existing = ${conversationId || 'null'}`);
 
         if (!conversationId) {
             // Try to get the real Facebook conversation ID
-            const realConvId = await fetchRealConversationId(participantId, pageId);
-            if (realConvId) {
-                conversationId = realConvId;
-                console.log(`[WEBHOOK] Using real Facebook conversation ID: ${conversationId}`);
-            } else {
-                // Fallback to temporary ID only if we can't get the real one
+            console.log(`[WEBHOOK] STEP 3: Fetching real conversation ID from Facebook...`);
+            try {
+                const realConvId = await fetchRealConversationId(participantId, pageId);
+                if (realConvId) {
+                    conversationId = realConvId;
+                    console.log(`[WEBHOOK] STEP 3 RESULT: Using real Facebook conversation ID: ${conversationId}`);
+                } else {
+                    // Fallback to temporary ID only if we can't get the real one
+                    conversationId = `t_${participantId}`;
+                    console.log(`[WEBHOOK] STEP 3 RESULT: Using temporary conversation ID: ${conversationId}`);
+                }
+            } catch (fetchErr) {
+                console.error(`[WEBHOOK] STEP 3 ERROR: ${fetchErr.message}`);
                 conversationId = `t_${participantId}`;
-                console.log(`[WEBHOOK] Using temporary conversation ID: ${conversationId}`);
             }
         }
 
         // Only increment unread for messages FROM the user, not echoes
         const newUnreadCount = isFromPage ? (existingConv?.unread_count || 0) : (existingConv?.unread_count || 0) + 1;
+        console.log(`[WEBHOOK] STEP 4: unreadCount = ${newUnreadCount}`);
 
         // Try multiple sources for participant name
         let participantName = existingConv?.participant_name;
