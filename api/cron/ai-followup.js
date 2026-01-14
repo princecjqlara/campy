@@ -144,7 +144,7 @@ export default async function handler(req, res) {
                 let messageText = followUp.message_template;
 
                 if (!messageText) {
-                    messageText = await generateFollowUpMessage(followUp, conversation);
+                    messageText = await generateFollowUpMessage(followUp, conversation, db);
                 }
 
                 // Send the message (pass last_message_time for 24h window check)
@@ -218,18 +218,112 @@ export default async function handler(req, res) {
     }
 }
 
-async function generateFollowUpMessage(followUp, conversation) {
+async function generateFollowUpMessage(followUp, conversation, db) {
     const name = conversation.participant_name?.split(' ')[0] || 'there';
 
+    // Get admin-configured prompts from settings
+    let adminConfig = {};
+    try {
+        const { data: settings } = await db
+            .from('settings')
+            .select('value')
+            .eq('key', 'ai_chatbot_config')
+            .single();
+        adminConfig = settings?.value || {};
+    } catch (e) {
+        console.log('[CRON] Could not load admin config, using defaults');
+    }
+
+    // Determine which prompt to use based on follow-up type
+    let followUpPrompt = '';
+    if (followUp.follow_up_type === 'initial' || followUp.follow_up_type === 'best_time') {
+        followUpPrompt = adminConfig.followup_prompt_initial ||
+            'Check in with the contact, remind them of what was discussed, and ask if they have any questions.';
+    } else if (followUp.follow_up_type === 'second') {
+        followUpPrompt = adminConfig.followup_prompt_second ||
+            'Gently follow up, offer to schedule a call, and provide value by sharing relevant info about our services.';
+    } else if (followUp.follow_up_type === 'reengagement' || followUp.follow_up_type === 'intuition') {
+        followUpPrompt = adminConfig.followup_prompt_reengagement ||
+            'Re-engage the contact with something new. Make them feel valued and not forgotten.';
+    }
+
+    // Check if AI-generated follow-ups are enabled
+    if (adminConfig.ai_generated_followups) {
+        // Get recent messages for context
+        const { data: messages } = await db
+            .from('facebook_messages')
+            .select('message_text, is_from_page')
+            .eq('conversation_id', followUp.conversation_id)
+            .order('timestamp', { ascending: false })
+            .limit(10);
+
+        const recentMessages = (messages || []).reverse();
+        const conversationContext = recentMessages
+            .filter(m => m.message_text)
+            .map(m => `${m.is_from_page ? 'You' : name}: ${m.message_text}`)
+            .join('\n');
+
+        // Generate AI message
+        try {
+            const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || process.env.VITE_NVIDIA_API_KEY;
+            if (NVIDIA_API_KEY) {
+                const aiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${NVIDIA_API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: 'nvidia/llama-3.1-nemotron-70b-instruct',
+                        messages: [
+                            {
+                                role: 'system',
+                                content: `You are a friendly customer service AI. Generate a short, casual follow-up message for Facebook Messenger.
+The contact's name is ${name}.
+
+${adminConfig.knowledge_base ? `About the business:\n${adminConfig.knowledge_base.substring(0, 500)}` : ''}
+
+Your task: ${followUpPrompt}
+
+Recent conversation:
+${conversationContext || 'No previous messages'}
+
+Generate a friendly, concise follow-up message (1-2 sentences). Don't use placeholders.`
+                            },
+                            { role: 'user', content: 'Generate the follow-up message now.' }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 150
+                    })
+                });
+
+                if (aiResponse.ok) {
+                    const aiData = await aiResponse.json();
+                    const generatedMessage = aiData.choices?.[0]?.message?.content;
+                    if (generatedMessage) {
+                        console.log('[CRON] AI generated follow-up:', generatedMessage.substring(0, 50) + '...');
+                        return generatedMessage.trim();
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[CRON] AI generation failed, using template:', e.message);
+        }
+    }
+
+    // Fallback to simple templates
     const templates = {
+        initial: `Hi ${name}! 👋 Just checking in - is there anything I can help you with today?`,
         best_time: `Hi ${name}! 👋 Just checking in - is there anything I can help you with today?`,
+        second: `Hey ${name}! 😊 I noticed we haven't connected in a bit. Would a quick call help answer your questions?`,
         intuition: `Hey ${name}! I noticed we haven't connected in a while. How's everything going?`,
+        reengagement: `Hi ${name}! 🚀 We have some new offerings that might interest you. Want to hear more?`,
         manual: `Hi ${name}! Following up on our conversation - let me know if you have any questions!`,
         reminder: `Hey ${name}! Just a friendly reminder about our conversation. Feel free to reach out anytime!`,
         flow: `Hi ${name}! Is there anything else I can assist you with?`
     };
 
-    return templates[followUp.follow_up_type] || templates.manual;
+    return templates[followUp.follow_up_type] || templates.initial;
 }
 
 async function sendMessage(pageId, recipientId, text, accessToken, lastMessageTime = null) {
