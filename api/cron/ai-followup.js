@@ -204,18 +204,20 @@ export default async function handler(req, res) {
 
         for (const conv of conversations) {
             try {
-                // Check if there's already a pending follow-up
+                // Delete any existing pending follow-ups - we'll create a fresh one with AI analysis
                 const { data: existing } = await db
                     .from('ai_followup_schedule')
                     .select('id')
                     .eq('conversation_id', conv.conversation_id)
-                    .eq('status', 'pending')
-                    .limit(1);
+                    .eq('status', 'pending');
 
                 if (existing && existing.length > 0) {
-                    console.log(`[CRON] Skipping ${conv.conversation_id} - already has pending follow-up`);
-                    results.skipped++;
-                    continue;
+                    await db
+                        .from('ai_followup_schedule')
+                        .delete()
+                        .eq('conversation_id', conv.conversation_id)
+                        .eq('status', 'pending');
+                    console.log(`[CRON] Deleted ${existing.length} old follow-ups for ${conv.participant_name || conv.conversation_id}`);
                 }
 
                 // Calculate hours since last message
