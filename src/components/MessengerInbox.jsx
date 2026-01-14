@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useFacebookMessenger } from '../hooks/useFacebookMessenger';
 import { facebookService } from '../services/facebookService';
 import WarningDashboard from './WarningDashboard';
+import AIControlPanel from './AIControlPanel';
 import { extractContactDetails, generateNotes } from '../services/aiConversationAnalyzer';
 
 const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
@@ -93,6 +94,7 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
     const [showArchived, setShowArchived] = useState(false);
     const [archivedConversations, setArchivedConversations] = useState([]);
     const [showWarningDashboard, setShowWarningDashboard] = useState(false);
+    const [showAIControlPanel, setShowAIControlPanel] = useState(false);
 
 
     // Advanced filtering state
@@ -136,9 +138,9 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
             response_deadline_hours: 24,
             warning_color: '#f59e0b',
             danger_color: '#ef4444',
-            enable_no_activity_warning: true,
-            enable_no_tag_warning: true,
-            enable_proposal_stuck_warning: true
+            enable_no_activity_warning: false,
+            enable_no_tag_warning: false,
+            enable_proposal_stuck_warning: false
         };
     });
 
@@ -1304,6 +1306,27 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                         </div>
                                     )}
                                 </div>
+                                {/* AI Control Button */}
+                                <button
+                                    onClick={() => setShowAIControlPanel(true)}
+                                    title="AI Controls"
+                                    style={{
+                                        marginLeft: 'auto',
+                                        background: selectedConversation.ai_enabled !== false ? 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)' : 'var(--bg-secondary)',
+                                        border: selectedConversation.ai_enabled !== false ? 'none' : '1px solid var(--border-color)',
+                                        borderRadius: '8px',
+                                        padding: '0.5rem 0.75rem',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.5rem',
+                                        color: selectedConversation.ai_enabled !== false ? 'white' : 'var(--text-muted)',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 500
+                                    }}
+                                >
+                                    🤖 {selectedConversation.human_takeover ? 'Human' : 'AI'}
+                                </button>
                             </div>
 
                             {/* Messages */}
@@ -2724,6 +2747,15 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                     }}
                     onClose={() => setShowWarningDashboard(false)}
                     warningSettings={warningSettings}
+                />
+            )}
+
+            {/* AI Control Panel Modal */}
+            {showAIControlPanel && selectedConversation && (
+                <AIControlPanel
+                    conversationId={selectedConversation.conversation_id}
+                    participantName={selectedConversation.participant_name}
+                    onClose={() => setShowAIControlPanel(false)}
                 />
             )}
         </>

@@ -1,4 +1,10 @@
 {
+    "crons": [
+        {
+            "path": "/api/cron/ai-followup",
+            "schedule": "*/15 * * * *"
+        }
+    ],
     "rewrites": [
         {
             "source": "/room/:slug*",
