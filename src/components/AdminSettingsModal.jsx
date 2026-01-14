@@ -61,7 +61,15 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
     danger_color: '#ef4444',  // red
     enable_no_activity_warning: true,
     enable_no_tag_warning: true,
-    enable_proposal_stuck_warning: true
+    enable_proposal_stuck_warning: true,
+    // Per-stage warning thresholds (days in stage before warning)
+    stage_warning_days: {
+      'booked': 3,      // Warn if in Booked for more than 3 days
+      'follow-up': 2,   // Warn if in Follow Up for more than 2 days
+      'preparing': 7,   // Warn if in Preparing for more than 7 days
+      'testing': 14,    // Warn if in Testing for more than 14 days
+      'running': 0      // No warning for Running (0 = disabled)
+    }
   });
   const [prices, setPrices] = useState({
     basic: 1799,
@@ -869,6 +877,45 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
                     <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
                       Contacts will show overdue status after this many hours without response
                     </small>
+                  </div>
+                </div>
+
+                {/* Per-Stage Warning Settings */}
+                <div style={{ marginBottom: '1.5rem', padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-color)' }}>
+                  <h5 style={{ marginBottom: '0.75rem', color: 'var(--text-primary)' }}>📊 Stage Duration Warnings</h5>
+                  <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                    Highlight clients who have been in a stage too long. Set to 0 to disable warning for that stage.
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem' }}>
+                    {[
+                      { key: 'booked', label: '📅 Booked' },
+                      { key: 'follow-up', label: '📞 Follow Up' },
+                      { key: 'preparing', label: '⏳ Preparing' },
+                      { key: 'testing', label: '🧪 Testing' },
+                      { key: 'running', label: '🚀 Running' }
+                    ].map(stage => (
+                      <div key={stage.key} className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.8rem' }}>{stage.label}</label>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <input
+                            type="number"
+                            className="form-input"
+                            value={warningSettings.stage_warning_days?.[stage.key] ?? 0}
+                            onChange={(e) => setWarningSettings(prev => ({
+                              ...prev,
+                              stage_warning_days: {
+                                ...prev.stage_warning_days,
+                                [stage.key]: parseInt(e.target.value) || 0
+                              }
+                            }))}
+                            min="0"
+                            max="365"
+                            style={{ width: '70px' }}
+                          />
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>days</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
