@@ -446,6 +446,65 @@ Instructions: ${goalDescriptions[activeGoal] || 'Help the customer and guide the
 Every response should move the conversation closer to achieving this goal.
 `;
 
+        // Add calendar availability for booking goals
+        if (activeGoal === 'booking' || config.booking_url) {
+            try {
+                // Get next 7 days of available slots
+                const now = new Date();
+                const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+                // Get existing calendar events to find conflicts
+                const { data: existingEvents } = await db
+                    .from('calendar_events')
+                    .select('start_time, end_time')
+                    .gte('start_time', now.toISOString())
+                    .lte('start_time', weekFromNow.toISOString())
+                    .eq('status', 'scheduled');
+
+                // Generate available slots (9 AM - 5 PM, Mon-Fri)
+                const availableSlots = [];
+                for (let d = 1; d <= 7; d++) {
+                    const dayDate = new Date(now.getTime() + d * 24 * 60 * 60 * 1000);
+                    const dayOfWeek = dayDate.getDay();
+
+                    // Skip weekends
+                    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+                    // Check slots from 9 AM to 5 PM
+                    for (let hour = 9; hour < 17; hour++) {
+                        const slotStart = new Date(dayDate);
+                        slotStart.setHours(hour, 0, 0, 0);
+
+                        // Check for conflicts
+                        const hasConflict = (existingEvents || []).some(e => {
+                            const eventStart = new Date(e.start_time);
+                            const eventEnd = new Date(e.end_time);
+                            return slotStart >= eventStart && slotStart < eventEnd;
+                        });
+
+                        if (!hasConflict) {
+                            const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayOfWeek];
+                            const dateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                            availableSlots.push(`${dayName} ${dateStr}, ${hour}:00 ${hour < 12 ? 'AM' : 'PM'}`);
+                        }
+                    }
+                }
+
+                if (availableSlots.length > 0) {
+                    aiPrompt += `
+## 📅 AVAILABLE BOOKING SLOTS (Use these when customer wants to schedule)
+${availableSlots.slice(0, 15).join('\n')}
+
+When customer wants to book, suggest one of these times. If they confirm a time, respond with:
+"BOOKING_CONFIRMED: [DATE] [TIME] - [CUSTOMER_NAME] - [PHONE_NUMBER if available]"
+`;
+                    console.log('[WEBHOOK] Added', availableSlots.length, 'available slots to prompt');
+                }
+            } catch (calErr) {
+                console.log('[WEBHOOK] Calendar check error (non-fatal):', calErr.message);
+            }
+        }
+
         // Add Knowledge Base (company info, services, etc.)
         if (knowledgeBase) {
             aiPrompt += `
@@ -631,6 +690,58 @@ When customer wants to schedule/book, share this: ${config.booking_url}
         console.log('[WEBHOOK] AI Reply:', aiReply.substring(0, 80) + '...');
         console.log('[WEBHOOK] AI Reply length:', aiReply.length);
         console.log('[WEBHOOK] Contains ||| delimiter:', aiReply.includes('|||'));
+
+        // Detect BOOKING_CONFIRMED and create calendar event
+        if (aiReply.includes('BOOKING_CONFIRMED:')) {
+            try {
+                const bookingMatch = aiReply.match(/BOOKING_CONFIRMED:\s*(.+)/i);
+                if (bookingMatch) {
+                    const bookingInfo = bookingMatch[1];
+                    console.log('[WEBHOOK] Booking detected:', bookingInfo);
+
+                    // Parse the booking info (format: DATE TIME - NAME - PHONE)
+                    const parts = bookingInfo.split('-').map(p => p.trim());
+                    const dateTimeStr = parts[0] || '';
+                    const customerName = parts[1] || conversation?.participant_name || 'Customer';
+                    const phone = parts[2] || '';
+
+                    // Try to parse date/time
+                    const bookingDate = new Date(dateTimeStr);
+                    if (!isNaN(bookingDate.getTime())) {
+                        // Create calendar event
+                        const { error: calError } = await db
+                            .from('calendar_events')
+                            .insert({
+                                title: `Meeting: ${customerName}`,
+                                description: `Booked via AI chatbot\nPhone: ${phone}\nConversation: ${conversationId}`,
+                                start_time: bookingDate.toISOString(),
+                                end_time: new Date(bookingDate.getTime() + 60 * 60 * 1000).toISOString(), // 1 hour
+                                event_type: 'meeting',
+                                status: 'scheduled',
+                                attendees: [customerName],
+                                notes: `AI booked for ${conversation?.participant_name || 'Unknown'}`
+                            });
+
+                        if (calError) {
+                            console.error('[WEBHOOK] Calendar event creation failed:', calError.message);
+                        } else {
+                            console.log('[WEBHOOK] ✅ Calendar event created for', bookingDate);
+
+                            // Mark goal as completed
+                            await db
+                                .from('facebook_conversations')
+                                .update({ goal_completed: true })
+                                .eq('conversation_id', conversationId);
+                        }
+                    }
+
+                    // Remove the BOOKING_CONFIRMED line from the reply (it's internal)
+                    aiReply = aiReply.replace(/BOOKING_CONFIRMED:\s*.+/gi, '').trim();
+                }
+            } catch (bookingErr) {
+                console.log('[WEBHOOK] Booking parsing error (non-fatal):', bookingErr.message);
+            }
+        }
 
         // Split messages - AI uses |||, but if not, force split by sentences
         let messageParts = [];
