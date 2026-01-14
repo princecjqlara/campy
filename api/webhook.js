@@ -549,8 +549,13 @@ async function triggerAIResponse(db, conversationId, pageId, conversation) {
         let aiPrompt = `## Role
 ${systemPrompt}
 
-## Language
-Respond in ${language} (mix of Tagalog and English). Be natural and conversational like a Filipino customer service rep.
+## 🗣️ LANGUAGE (CRITICAL - MUST FOLLOW)
+You MUST respond in ${language}. This is MANDATORY.
+- Use Taglish (mix Filipino and English naturally in sentences)
+- Use "po" and "opo" for respect
+- Example: "Hello po! Kumusta? Ready na po tayo sa consultation mo!" 
+- Example: "Ano po ang business mo? Gusto namin i-maximize yung ROI mo sa ads."
+- NEVER respond in pure English only - always mix Filipino words.
 
 ## Platform: Facebook Messenger
 Contact Name: ${conversation?.participant_name || 'Customer'}
