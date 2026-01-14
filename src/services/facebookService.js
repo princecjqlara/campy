@@ -552,12 +552,43 @@ class FacebookService {
                 throw new Error(errorData.error?.message || 'Failed to send message');
             }
 
-            return await response.json();
+            const result = await response.json();
+
+            // Pre-save message with sent_source='app' so webhook can detect it
+            if (result.message_id) {
+                // Get conversation_id for this recipient
+                const { data: conv } = await getSupabase()
+                    .from('facebook_conversations')
+                    .select('conversation_id')
+                    .eq('participant_id', recipientId)
+                    .eq('page_id', pageId)
+                    .single();
+
+                const conversationId = conv?.conversation_id || `t_${recipientId}`;
+
+                await getSupabase()
+                    .from('facebook_messages')
+                    .upsert({
+                        message_id: result.message_id,
+                        conversation_id: conversationId,
+                        sender_id: pageId,
+                        message_text: messageText,
+                        is_from_page: true,
+                        sent_source: 'app',
+                        timestamp: new Date().toISOString(),
+                        is_read: true
+                    }, { onConflict: 'message_id' });
+
+                console.log(`[SEND] Message ${result.message_id} saved with sent_source='app'`);
+            }
+
+            return result;
         } catch (error) {
             console.error('Error sending message:', error);
             throw error;
         }
     }
+
 
     /**
      * Send a message with MESSAGE_TAG for messaging outside 24-hour window
@@ -588,12 +619,43 @@ class FacebookService {
                 throw new Error(errorData.error?.message || 'Failed to send tagged message');
             }
 
-            return await response.json();
+            const result = await response.json();
+
+            // Pre-save message with sent_source='app' so webhook can detect it
+            if (result.message_id) {
+                // Get conversation_id for this recipient
+                const { data: conv } = await getSupabase()
+                    .from('facebook_conversations')
+                    .select('conversation_id')
+                    .eq('participant_id', recipientId)
+                    .eq('page_id', pageId)
+                    .single();
+
+                const conversationId = conv?.conversation_id || `t_${recipientId}`;
+
+                await getSupabase()
+                    .from('facebook_messages')
+                    .upsert({
+                        message_id: result.message_id,
+                        conversation_id: conversationId,
+                        sender_id: pageId,
+                        message_text: messageText,
+                        is_from_page: true,
+                        sent_source: 'app',
+                        timestamp: new Date().toISOString(),
+                        is_read: true
+                    }, { onConflict: 'message_id' });
+
+                console.log(`[SEND] Tagged message ${result.message_id} saved with sent_source='app'`);
+            }
+
+            return result;
         } catch (error) {
             console.error('Error sending tagged message:', error);
             throw error;
         }
     }
+
 
     /**
      * Link a conversation to a client

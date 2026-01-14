@@ -256,6 +256,27 @@ async function handleIncomingMessage(pageId, event) {
         }
 
         // Save message
+        // For echoes (messages from page), check if already saved by app
+        let sentSource = null;
+        if (isFromPage) {
+            // Check if this message was already saved by the app (sent via Campy)
+            const { data: existingMsg } = await db
+                .from('facebook_messages')
+                .select('sent_source')
+                .eq('message_id', message.mid)
+                .single();
+
+            if (existingMsg?.sent_source === 'app') {
+                // Already saved by app, don't overwrite sent_source
+                sentSource = 'app';
+                console.log(`[WEBHOOK] Message ${message.mid} was sent via app`);
+            } else {
+                // Not sent via app = sent via Facebook Business Suite
+                sentSource = 'business_suite';
+                console.log(`[WEBHOOK] Message ${message.mid} was sent via Facebook Business Suite`);
+            }
+        }
+
         const { error: msgError } = await db
             .from('facebook_messages')
             .upsert({
@@ -266,7 +287,8 @@ async function handleIncomingMessage(pageId, event) {
                 attachments: message.attachments || null,
                 timestamp: new Date(timestamp).toISOString(),
                 is_from_page: isFromPage,
-                is_read: isFromPage // Echo messages are already "read"
+                is_read: isFromPage, // Echo messages are already "read"
+                sent_source: sentSource
             }, { onConflict: 'message_id' });
 
         if (msgError) {
