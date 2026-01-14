@@ -389,30 +389,53 @@ export function useFacebookMessenger() {
 
     // Send a message
     const sendMessage = useCallback(async (messageText) => {
-        if (!selectedConversation || !messageText.trim()) return null;
+        console.log('[HOOK] sendMessage called');
+
+        if (!selectedConversation) {
+            console.log('[HOOK] No selected conversation');
+            return false;
+        }
+
+        if (!messageText.trim()) {
+            console.log('[HOOK] Empty message text');
+            return false;
+        }
+
+        console.log('[HOOK] Sending to:', {
+            page_id: selectedConversation.page_id,
+            participant_id: selectedConversation.participant_id,
+            conversation_id: selectedConversation.conversation_id,
+            messageLength: messageText.length
+        });
 
         try {
             setLoading(true);
 
             // Send via Facebook API
-            await facebookService.sendMessage(
+            console.log('[HOOK] Calling facebookService.sendMessage...');
+            const result = await facebookService.sendMessage(
                 selectedConversation.page_id,
                 selectedConversation.participant_id,
-                messageText
+                messageText,
+                selectedConversation.conversation_id
             );
+            console.log('[HOOK] sendMessage result:', result);
 
             // Sync messages to get the sent message
+            console.log('[HOOK] Syncing messages...');
             await facebookService.syncMessages(
                 selectedConversation.conversation_id,
                 selectedConversation.page_id
             );
 
             // Reload messages
+            console.log('[HOOK] Reloading messages...');
             await loadMessages(selectedConversation.conversation_id);
 
+            console.log('[HOOK] Message sent successfully');
             return true;
         } catch (err) {
-            console.error('Error sending message:', err);
+            console.error('[HOOK] Error sending message:', err);
             setError(err.message);
             return false;
         } finally {

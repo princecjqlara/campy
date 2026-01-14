@@ -531,11 +531,39 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
 
     const handleSendMessage = async (e) => {
         e.preventDefault();
-        if (!messageText.trim() || loading) return;
+        if (!messageText.trim()) {
+            console.log('[SEND] No message text');
+            return;
+        }
+        if (loading) {
+            console.log('[SEND] Already loading, skipping');
+            return;
+        }
+        if (!selectedConversation) {
+            console.log('[SEND] No conversation selected');
+            alert('Please select a conversation first');
+            return;
+        }
+        if (!selectedConversation.participant_id) {
+            console.log('[SEND] Missing participant_id:', selectedConversation);
+            alert('Error: Contact does not have a participant ID');
+            return;
+        }
 
-        const success = await sendMessage(messageText);
-        if (success) {
-            setMessageText('');
+        console.log('[SEND] Sending message to:', selectedConversation.participant_name, 'Text:', messageText.substring(0, 50));
+
+        try {
+            const success = await sendMessage(messageText);
+            if (success) {
+                console.log('[SEND] Message sent successfully');
+                setMessageText('');
+            } else {
+                console.log('[SEND] sendMessage returned false');
+                alert('Failed to send message. Check console for details.');
+            }
+        } catch (err) {
+            console.error('[SEND] Error:', err);
+            alert('Error sending message: ' + err.message);
         }
     };
 
