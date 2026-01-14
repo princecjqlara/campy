@@ -300,6 +300,31 @@ async function handleIncomingMessage(pageId, event) {
             console.log(`[WEBHOOK] Message ${message.mid} saved!`);
         }
 
+        // Track engagement data for best time calculation (incoming messages only)
+        if (!isFromPage) {
+            const msgDate = new Date(timestamp);
+            await db.from('contact_engagement').insert({
+                conversation_id: conversationId,
+                page_id: pageId,
+                message_direction: 'inbound',
+                day_of_week: msgDate.getDay(),
+                hour_of_day: msgDate.getHours(),
+                engagement_score: 1,
+                message_timestamp: msgDate.toISOString()
+            });
+
+            // Cancel any pending follow-ups since user responded
+            const { data: cancelled } = await db
+                .from('ai_followup_schedule')
+                .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+                .eq('conversation_id', conversationId)
+                .eq('status', 'pending');
+
+            if (cancelled && cancelled.length > 0) {
+                console.log(`[WEBHOOK] Cancelled ${cancelled.length} pending follow-ups - user responded`);
+            }
+        }
+
         // TRIGGER AI AUTO-RESPONSE for incoming user messages (not echoes)
         if (!isFromPage && message.text) {
             console.log('[WEBHOOK] Triggering AI auto-response...');
@@ -368,6 +393,15 @@ async function triggerAIResponse(db, conversationId, pageId, conversation) {
         const knowledgeBase = config.knowledge_base || '';
         const faqContent = config.faq || ''; // FAQ for RAG pipeline
         const language = config.language || 'Taglish'; // Default to Taglish (Tagalog + English mix)
+
+        // DEBUG: Log what RAG content we have
+        console.log('[WEBHOOK] RAG Content Check:', {
+            hasKnowledgeBase: !!knowledgeBase,
+            kbLength: knowledgeBase.length,
+            hasFaq: !!faqContent,
+            faqLength: faqContent.length,
+            language: language
+        });
 
         let aiPrompt = `## Role
 ${systemPrompt}

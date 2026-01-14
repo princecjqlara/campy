@@ -161,13 +161,15 @@ export default async function handler(req, res) {
             .single();
 
         const config = settings?.value || {};
-        const silenceHours = config.intuition_silence_hours || 24;
-        const maxPerRun = config.max_followups_per_cron || 20;
+        // AGGRESSIVE SETTINGS: Reduced silence hours, increased capacity
+        const silenceHours = config.intuition_silence_hours || 4; // Was 24, now 4 hours default
+        const maxPerRun = config.max_followups_per_cron || 100; // Was 20, now 100 per run
 
         // Calculate cutoff time (conversations inactive for X hours)
         const cutoffTime = new Date(now.getTime() - (silenceHours * 60 * 60 * 1000));
 
         // Find conversations that need follow-up
+        // REMOVED: last_message_from_page requirement - follow up even if user ghosted
         const { data: conversations, error } = await db
             .from('facebook_conversations')
             .select(`
@@ -179,10 +181,9 @@ export default async function handler(req, res) {
                 last_message_from_page,
                 active_goal_id
             `)
-            .eq('ai_enabled', true)
-            .eq('human_takeover', false)
-            .eq('opt_out', false)
-            .eq('last_message_from_page', true)
+            .or('ai_enabled.is.null,ai_enabled.eq.true') // Default to enabled
+            .or('human_takeover.is.null,human_takeover.eq.false')
+            .or('opt_out.is.null,opt_out.eq.false')
             .lt('last_message_time', cutoffTime.toISOString())
             .or(`cooldown_until.is.null,cooldown_until.lt.${now.toISOString()}`)
             .order('last_message_time', { ascending: true })
