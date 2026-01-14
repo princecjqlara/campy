@@ -2056,6 +2056,106 @@ Always ask for the customer's name and business type early in the conversation.`
                 />
               </div>
 
+              {/* Bot Rules - Do's and Don'ts */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>📋 Bot Rules (Do's & Don'ts)</h5>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                  Set clear boundaries for what the AI should and shouldn't do
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  {/* Do's */}
+                  <div>
+                    <label className="form-label" style={{ color: '#34d399' }}>✅ DO's (Things the bot SHOULD do)</label>
+                    <textarea
+                      className="form-input"
+                      rows={8}
+                      placeholder={`- Always greet customers warmly
+- Ask for their name early
+- Explain services clearly
+- Provide pricing when asked
+- Suggest booking a call
+- Use emojis sparingly
+- Be patient with questions
+- Offer alternatives if unsure
+- Confirm understanding
+- Thank them for inquiring`}
+                      defaultValue={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.bot_rules_dos || '';
+                        } catch { return ''; }
+                      })()}
+                      onChange={(e) => {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        config.bot_rules_dos = e.target.value;
+                        localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                      }}
+                      style={{ resize: 'vertical', fontSize: '0.875rem', borderColor: 'rgba(52, 211, 153, 0.3)' }}
+                    />
+                  </div>
+
+                  {/* Don'ts */}
+                  <div>
+                    <label className="form-label" style={{ color: '#f87171' }}>❌ DON'Ts (Things the bot should NEVER do)</label>
+                    <textarea
+                      className="form-input"
+                      rows={8}
+                      placeholder={`- Never make up information
+- Don't promise discounts
+- Never share competitor info
+- Don't be pushy or aggressive
+- Never give legal/medical advice
+- Don't use inappropriate language
+- Never share other client data
+- Don't guarantee results
+- Never ask for passwords
+- Don't discuss politics/religion`}
+                      defaultValue={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.bot_rules_donts || '';
+                        } catch { return ''; }
+                      })()}
+                      onChange={(e) => {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        config.bot_rules_donts = e.target.value;
+                        localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                      }}
+                      style={{ resize: 'vertical', fontSize: '0.875rem', borderColor: 'rgba(248, 113, 113, 0.3)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Escalation Rules */}
+                <div style={{ marginTop: '1rem' }}>
+                  <label className="form-label" style={{ color: '#fbbf24' }}>⚠️ Escalation Triggers (When to hand off to human)</label>
+                  <textarea
+                    className="form-input"
+                    rows={4}
+                    placeholder={`- Customer explicitly asks for a human
+- Complaints or angry customers
+- Complex technical questions
+- Refund/cancellation requests
+- Questions about contracts
+- Pricing negotiations beyond 10%
+- Any legal or liability concerns`}
+                    defaultValue={(() => {
+                      try {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        return config.escalation_triggers || '';
+                      } catch { return ''; }
+                    })()}
+                    onChange={(e) => {
+                      const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                      config.escalation_triggers = e.target.value;
+                      localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                    }}
+                    style={{ resize: 'vertical', fontSize: '0.875rem', borderColor: 'rgba(251, 191, 36, 0.3)' }}
+                  />
+                </div>
+              </div>
+
               {/* Follow-up Prompts */}
               <div style={{ marginBottom: '2rem' }}>
                 <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>💬 Follow-up Message Templates</h5>
