@@ -1,7 +1,93 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { getPackageInfo, formatPrice } from '../utils/clients';
 
 const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClient }) => {
+  // Response deadline from settings (default 24 hours)
+  const [responseDeadlineHours, setResponseDeadlineHours] = useState(24);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('warning_settings');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        if (settings.response_deadline_hours) {
+          setResponseDeadlineHours(settings.response_deadline_hours);
+        }
+      }
+    } catch (e) {
+      console.log('Could not load warning settings:', e);
+    }
+  }, []);
+
+  // Calculate deadline countdown for a client
+  const getDeadlineInfo = (client) => {
+    const lastActivityDate = client.lastActivity ? new Date(client.lastActivity) :
+      client.created_at ? new Date(client.created_at) : null;
+
+    if (!lastActivityDate) {
+      return { text: '—', color: 'var(--text-muted)', priority: 0 };
+    }
+
+    const now = new Date();
+    const deadlineMs = responseDeadlineHours * 60 * 60 * 1000;
+    const deadline = new Date(lastActivityDate.getTime() + deadlineMs);
+    const timeLeftMs = deadline - now;
+
+    // Already overdue
+    if (timeLeftMs <= 0) {
+      const overdueHours = Math.abs(timeLeftMs / (1000 * 60 * 60));
+      if (overdueHours > 24) {
+        return {
+          text: `${Math.floor(overdueHours / 24)}d overdue`,
+          color: 'var(--error)',
+          priority: 3
+        };
+      }
+      return {
+        text: `${Math.floor(overdueHours)}h overdue`,
+        color: 'var(--error)',
+        priority: 3
+      };
+    }
+
+    const hoursLeft = timeLeftMs / (1000 * 60 * 60);
+    const percentLeft = hoursLeft / responseDeadlineHours;
+
+    // Less than 10% time left - red
+    if (percentLeft < 0.1) {
+      const minsLeft = Math.floor(timeLeftMs / (1000 * 60));
+      return {
+        text: minsLeft < 60 ? `${minsLeft}m left` : `${Math.floor(hoursLeft)}h left`,
+        color: 'var(--error)',
+        priority: 2
+      };
+    }
+
+    // Less than 50% time left - yellow
+    if (percentLeft < 0.5) {
+      return {
+        text: `${Math.floor(hoursLeft)}h left`,
+        color: 'var(--warning)',
+        priority: 1
+      };
+    }
+
+    // Plenty of time - green
+    if (hoursLeft > 24) {
+      return {
+        text: `${Math.floor(hoursLeft / 24)}d ${Math.floor(hoursLeft % 24)}h`,
+        color: 'var(--success)',
+        priority: 0
+      };
+    }
+
+    return {
+      text: `${Math.floor(hoursLeft)}h left`,
+      color: 'var(--success)',
+      priority: 0
+    };
+  };
+
   // Apply filters
   const filteredClients = useMemo(() => {
     let filtered = [...clients];
@@ -44,15 +130,20 @@ const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClie
       }
     }
 
-    // Sort by priority, then by name
+    // Sort by deadline urgency first, then priority, then name
     filtered.sort((a, b) => {
+      const aDeadline = getDeadlineInfo(a);
+      const bDeadline = getDeadlineInfo(b);
+      if (aDeadline.priority !== bDeadline.priority) {
+        return bDeadline.priority - aDeadline.priority;
+      }
       const priorityDiff = (a.priority || 999) - (b.priority || 999);
       if (priorityDiff !== 0) return priorityDiff;
       return (a.clientName || '').localeCompare(b.clientName || '');
     });
 
     return filtered;
-  }, [clients, filters]);
+  }, [clients, filters, responseDeadlineHours]);
 
   const getPhaseConfig = (phase) => {
     const configs = {
@@ -91,17 +182,16 @@ const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClie
               <th>Business</th>
               <th>Package</th>
               <th>Phase</th>
+              <th style={{ width: '100px' }}>⏰ Deadline</th>
               <th>Payment Status</th>
-              <th>Payment Schedule</th>
               <th>Assigned To</th>
-              <th>Months</th>
-              <th style={{ width: '120px' }}>Actions</th>
+              <th style={{ width: '100px' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {filteredClients.length === 0 ? (
               <tr>
-                <td colSpan="10" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                <td colSpan="9" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
                   No clients found matching your filters
                 </td>
               </tr>
@@ -110,6 +200,7 @@ const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClie
                 const pkg = getPackageInfo(client);
                 const phaseConfig = getPhaseConfig(client.phase);
                 const paymentIcon = getPaymentIcon(client.paymentStatus);
+                const deadlineInfo = getDeadlineInfo(client);
 
                 return (
                   <tr key={client.id} className="client-table-row">
@@ -173,6 +264,18 @@ const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClie
                     </td>
                     <td>
                       <span style={{
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '4px',
+                        fontSize: '0.75rem',
+                        fontWeight: '600',
+                        color: deadlineInfo.color,
+                        background: `${deadlineInfo.color}20`
+                      }}>
+                        {deadlineInfo.text}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '0.25rem'
@@ -180,15 +283,7 @@ const ClientsTable = ({ clients, filters, onViewClient, onEditClient, onMoveClie
                         {paymentIcon} {client.paymentStatus || 'unpaid'}
                       </span>
                     </td>
-                    <td>{client.paymentSchedule || '—'}</td>
                     <td>{client.assignedUser?.name || client.assignedUser?.email || client.assignedTo || '—'}</td>
-                    <td>
-                      {client.monthsWithClient > 0 ? (
-                        <span>{client.monthsWithClient}mo</span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button

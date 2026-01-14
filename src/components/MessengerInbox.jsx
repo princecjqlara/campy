@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useFacebookMessenger } from '../hooks/useFacebookMessenger';
 import { facebookService } from '../services/facebookService';
 import WarningDashboard from './WarningDashboard';
-import UnassignedContactsTable from './UnassignedContactsTable';
 import { extractContactDetails, generateNotes } from '../services/aiConversationAnalyzer';
 
 const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
@@ -94,7 +93,6 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
     const [showArchived, setShowArchived] = useState(false);
     const [archivedConversations, setArchivedConversations] = useState([]);
     const [showWarningDashboard, setShowWarningDashboard] = useState(false);
-    const [showTableView, setShowTableView] = useState(false); // Toggle for unassigned contacts table view
 
 
     // Advanced filtering state
@@ -665,45 +663,6 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                 </button>
             </div>
 
-            {/* Unassigned Contacts Table View */}
-            {showTableView && (
-                <div style={{
-                    padding: '1rem',
-                    background: 'var(--bg-secondary)',
-                    borderRadius: 'var(--radius-lg)',
-                    marginBottom: '1rem',
-                    border: '1px solid var(--border-color)'
-                }}>
-                    <div style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '1rem'
-                    }}>
-                        <h3 style={{ margin: 0, fontSize: '1.125rem' }}>
-                            📊 Unassigned Contacts Table
-                        </h3>
-                        <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={() => setShowTableView(false)}
-                        >
-                            ✕ Close Table View
-                        </button>
-                    </div>
-                    <UnassignedContactsTable
-                        conversations={conversations}
-                        onSelectConversation={(conv) => {
-                            selectConversation(conv);
-                            setMobileView('chat');
-                            setShowTableView(false);
-                        }}
-                        onAssign={assignToUser}
-                        users={users}
-                        responseDeadlineHours={warningSettings.response_deadline_hours || 24}
-                    />
-                </div>
-            )}
-
             <div className="messenger-grid" style={{
                 display: 'grid',
                 gridTemplateColumns: '280px 1fr 260px',
@@ -771,14 +730,6 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                             )}
                         </h3>
                         <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                            <button
-                                className={`btn btn-sm ${showTableView ? 'btn-primary' : 'btn-secondary'}`}
-                                onClick={() => setShowTableView(!showTableView)}
-                                title="Toggle unassigned contacts table view"
-                                style={{ minWidth: '32px', padding: '0.35rem 0.5rem' }}
-                            >
-                                📊
-                            </button>
                             <button
                                 className="btn btn-sm btn-secondary"
                                 onClick={() => setShowBulkModal(true)}
