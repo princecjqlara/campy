@@ -353,11 +353,8 @@ async function handleIncomingMessage(pageId, event) {
             // AUTO-ENABLE: AI is enabled by default for all contacts
             ai_enabled: existingConv?.ai_enabled ?? true,
             // Set default goal if not already set - use null for new (column is UUID type)  
-            active_goal_id: existingConv?.active_goal_id || null,
-            // Allow re-entry: reset goal_completed for re-engagement
-            goal_completed: existingConv?.goal_completed === true
-                ? (isNewConversation ? false : existingConv.goal_completed)
-                : false
+            active_goal_id: existingConv?.active_goal_id || null
+            // Note: goal_completed column removed - doesn't exist in database
         };
 
         let convError = null;
