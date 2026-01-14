@@ -17,6 +17,8 @@ const DeadlineAlerts = ({ clients, onViewClient, onEditClient }) => {
         danger_color: '#ef4444'
     });
     const [isExpanded, setIsExpanded] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 5;
 
     useEffect(() => {
         try {
@@ -175,76 +177,120 @@ const DeadlineAlerts = ({ clients, onViewClient, onEditClient }) => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {urgentClients.map(client => (
-                                    <tr
-                                        key={client.id}
-                                        style={{
-                                            borderBottom: '1px solid var(--border-color)',
-                                            background: client.deadlineInfo.priority >= 2 ? 'rgba(239, 68, 68, 0.05)' : 'transparent'
-                                        }}
-                                    >
-                                        <td style={{ padding: '0.75rem 1rem' }}>
-                                            <span style={{ fontWeight: '500' }}>{client.clientName || '—'}</span>
-                                        </td>
-                                        <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>
-                                            {client.businessName || '—'}
-                                        </td>
-                                        <td style={{ padding: '0.75rem 1rem' }}>
-                                            <span style={{
-                                                padding: '0.25rem 0.5rem',
-                                                borderRadius: '4px',
-                                                fontSize: '0.75rem',
-                                                background: 'var(--bg-tertiary)'
-                                            }}>
-                                                {client.phase === 'booked' && '📅 Booked'}
-                                                {client.phase === 'follow-up' && '📞 Follow Up'}
-                                                {client.phase === 'preparing' && '⏳ Preparing'}
-                                                {client.phase === 'testing' && '🧪 Testing'}
-                                                {client.phase === 'running' && '🚀 Running'}
-                                                {!['booked', 'follow-up', 'preparing', 'testing', 'running'].includes(client.phase) && (client.phase || '—')}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '0.75rem 1rem' }}>
-                                            <span style={{ fontSize: '0.875rem' }}>
-                                                {client.deadlineInfo.daysInStage}d / {client.deadlineInfo.thresholdDays}d
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '0.75rem 1rem' }}>
-                                            <span style={{
-                                                padding: '0.25rem 0.75rem',
-                                                borderRadius: '4px',
-                                                fontSize: '0.875rem',
-                                                fontWeight: '600',
-                                                color: client.deadlineInfo.color,
-                                                background: `${client.deadlineInfo.color}20`
-                                            }}>
-                                                {client.deadlineInfo.text}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '0.75rem 1rem' }}>
-                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                <button
-                                                    className="btn btn-sm btn-secondary"
-                                                    onClick={() => onViewClient(client.id)}
-                                                    title="View Client"
-                                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                                                >
-                                                    👁️
-                                                </button>
-                                                <button
-                                                    className="btn btn-sm btn-primary"
-                                                    onClick={() => onEditClient(client.id)}
-                                                    title="Edit Client"
-                                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                                                >
-                                                    ✏️
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
+                                {urgentClients
+                                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                                    .map(client => (
+                                        <tr
+                                            key={client.id}
+                                            style={{
+                                                borderBottom: '1px solid var(--border-color)',
+                                                background: client.deadlineInfo.priority >= 2 ? 'rgba(239, 68, 68, 0.05)' : 'transparent'
+                                            }}
+                                        >
+                                            <td style={{ padding: '0.75rem 1rem' }}>
+                                                <span style={{ fontWeight: '500' }}>{client.clientName || '—'}</span>
+                                            </td>
+                                            <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>
+                                                {client.businessName || '—'}
+                                            </td>
+                                            <td style={{ padding: '0.75rem 1rem' }}>
+                                                <span style={{
+                                                    padding: '0.25rem 0.5rem',
+                                                    borderRadius: '4px',
+                                                    fontSize: '0.75rem',
+                                                    background: 'var(--bg-tertiary)'
+                                                }}>
+                                                    {client.phase === 'booked' && '📅 Booked'}
+                                                    {client.phase === 'follow-up' && '📞 Follow Up'}
+                                                    {client.phase === 'preparing' && '⏳ Preparing'}
+                                                    {client.phase === 'testing' && '🧪 Testing'}
+                                                    {client.phase === 'running' && '🚀 Running'}
+                                                    {!['booked', 'follow-up', 'preparing', 'testing', 'running'].includes(client.phase) && (client.phase || '—')}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '0.75rem 1rem' }}>
+                                                <span style={{ fontSize: '0.875rem' }}>
+                                                    {client.deadlineInfo.daysInStage}d / {client.deadlineInfo.thresholdDays}d
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '0.75rem 1rem' }}>
+                                                <span style={{
+                                                    padding: '0.25rem 0.75rem',
+                                                    borderRadius: '4px',
+                                                    fontSize: '0.875rem',
+                                                    fontWeight: '600',
+                                                    color: client.deadlineInfo.color,
+                                                    background: `${client.deadlineInfo.color}20`
+                                                }}>
+                                                    {client.deadlineInfo.text}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '0.75rem 1rem' }}>
+                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                    <button
+                                                        className="btn btn-sm btn-secondary"
+                                                        onClick={() => onViewClient(client.id)}
+                                                        title="View Client"
+                                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                                    >
+                                                        👁️
+                                                    </button>
+                                                    <button
+                                                        className="btn btn-sm btn-primary"
+                                                        onClick={() => onEditClient(client.id)}
+                                                        title="Edit Client"
+                                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                                    >
+                                                        ✏️
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
                             </tbody>
                         </table>
+
+                        {/* Pagination Controls */}
+                        {urgentClients.length > itemsPerPage && (
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                padding: '0.75rem 1rem',
+                                borderTop: '1px solid var(--border-color)',
+                                background: 'var(--bg-tertiary)'
+                            }}>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                    Showing {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, urgentClients.length)} of {urgentClients.length}
+                                </span>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <button
+                                        className="btn btn-sm btn-secondary"
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage === 1}
+                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                    >
+                                        ← Prev
+                                    </button>
+                                    <span style={{
+                                        padding: '0.25rem 0.5rem',
+                                        fontSize: '0.75rem',
+                                        display: 'flex',
+                                        alignItems: 'center'
+                                    }}>
+                                        {currentPage} / {Math.ceil(urgentClients.length / itemsPerPage)}
+                                    </span>
+                                    <button
+                                        className="btn btn-sm btn-secondary"
+                                        onClick={() => setCurrentPage(p => Math.min(Math.ceil(urgentClients.length / itemsPerPage), p + 1))}
+                                        disabled={currentPage >= Math.ceil(urgentClients.length / itemsPerPage)}
+                                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                    >
+                                        Next →
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )
             )}
