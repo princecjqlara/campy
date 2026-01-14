@@ -221,21 +221,89 @@ export default async function handler(req, res) {
                 // Calculate hours since last message
                 const hoursSince = Math.floor((now - new Date(conv.last_message_time)) / (1000 * 60 * 60));
 
-                // Calculate BEST TIME to contact this person (not just 2 hours from now)
-                const bestTime = await calculateBestTimeForContact(db, conv.conversation_id);
+                // Get recent messages for AI analysis
+                const { data: recentMessages } = await db
+                    .from('facebook_messages')
+                    .select('message_text, is_from_page, timestamp')
+                    .eq('conversation_id', conv.conversation_id)
+                    .order('timestamp', { ascending: false })
+                    .limit(5);
 
-                console.log(`[CRON] Best time for ${conv.participant_name || conv.conversation_id}: ${bestTime.toISOString()}`);
+                // Use AI to analyze conversation and determine follow-up timing
+                let analysis = { wait_hours: 24, reason: `No response for ${hoursSince} hours`, follow_up_type: 'gentle_reminder' };
 
-                // Create follow-up scheduled at their best time
+                if (recentMessages && recentMessages.length > 0) {
+                    const nvidiaKey = process.env.NVIDIA_API_KEY;
+                    if (nvidiaKey) {
+                        try {
+                            const messagesSummary = recentMessages.reverse().map(m =>
+                                `${m.is_from_page ? 'AI' : 'Customer'}: ${m.message_text || '[attachment]'}`
+                            ).join('\n');
+
+                            const analysisPrompt = `Analyze this conversation and determine the optimal follow-up timing.
+
+CONVERSATION (last activity ${hoursSince} hours ago):
+${messagesSummary}
+
+You must respond with ONLY valid JSON (no markdown, no explanation):
+{
+  "wait_hours": <number between 1-72>,
+  "reason": "<brief explanation why this wait time is appropriate based on the conversation context>",
+  "follow_up_type": "<one of: immediate|gentle_reminder|check_in|urgent|re_engagement>"
+}
+
+GUIDELINES:
+- Customer asked for time to think: 24-48 hours
+- Customer comparing prices/competitors: 48-72 hours
+- Conversation ended abruptly mid-discussion: 4-8 hours
+- Customer showed buying intent but didn't commit: 2-4 hours
+- Customer just received info: 24 hours
+- Customer went silent after booking question: 6-12 hours`;
+
+                            const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${nvidiaKey}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    model: 'meta/llama-3.1-8b-instruct',
+                                    messages: [{ role: 'user', content: analysisPrompt }],
+                                    max_tokens: 200,
+                                    temperature: 0.3
+                                })
+                            });
+
+                            if (response.ok) {
+                                const aiResult = await response.json();
+                                const analysisText = aiResult.choices?.[0]?.message?.content?.trim();
+                                const cleanJson = analysisText.replace(/```json\n?|\n?```/g, '').trim();
+                                const parsed = JSON.parse(cleanJson);
+                                analysis = {
+                                    wait_hours: Math.min(Math.max(parsed.wait_hours || 24, 1), 72),
+                                    reason: parsed.reason || `Silent for ${hoursSince} hours`,
+                                    follow_up_type: parsed.follow_up_type || 'gentle_reminder'
+                                };
+                                console.log(`[CRON] AI analysis for ${conv.participant_name}: wait ${analysis.wait_hours}h - ${analysis.reason}`);
+                            }
+                        } catch (aiErr) {
+                            console.log(`[CRON] AI analysis error (using defaults):`, aiErr.message);
+                        }
+                    }
+                }
+
+                // Calculate scheduled time based on AI analysis
+                const scheduledAt = new Date(now.getTime() + analysis.wait_hours * 60 * 60 * 1000);
+
+                // Create follow-up with AI-determined timing
                 const { error: insertError } = await db
                     .from('ai_followup_schedule')
                     .insert({
                         conversation_id: conv.conversation_id,
                         page_id: conv.page_id,
-                        scheduled_at: bestTime.toISOString(),
-                        follow_up_type: 'best_time',
-                        reason: `No response for ${hoursSince} hours - scheduled at best time`,
-                        goal_id: conv.active_goal_id,
+                        scheduled_for: scheduledAt.toISOString(),
+                        follow_up_type: analysis.follow_up_type,
+                        reason: analysis.reason,
                         status: 'pending'
                     });
 
@@ -243,7 +311,7 @@ export default async function handler(req, res) {
                     console.error(`[CRON] Error scheduling for ${conv.conversation_id}:`, insertError);
                     results.skipped++;
                 } else {
-                    console.log(`[CRON] Scheduled silence follow-up for ${conv.participant_name || conv.conversation_id}`);
+                    console.log(`[CRON] ✅ Scheduled intelligent follow-up for ${conv.participant_name || conv.conversation_id} in ${analysis.wait_hours}h`);
                     results.scheduled++;
 
                     // Log the action
@@ -251,8 +319,8 @@ export default async function handler(req, res) {
                         conversation_id: conv.conversation_id,
                         page_id: conv.page_id,
                         action_type: 'silence_detected',
-                        action_data: { hoursSince, scheduledAt: bestTime.toISOString() },
-                        explanation: `Silence detected (${hoursSince}h). Follow-up scheduled.`
+                        action_data: { hoursSince, waitHours: analysis.wait_hours, reason: analysis.reason },
+                        explanation: `AI intuition: ${analysis.reason}`
                     });
                 }
             } catch (err) {
