@@ -581,6 +581,30 @@ Every response should move the conversation closer to achieving this goal.
         // Add calendar availability for booking goals
         if (activeGoal === 'booking' || config.booking_url) {
             try {
+                // Get booking settings from database
+                const { data: bookingSettings } = await db
+                    .from('booking_settings')
+                    .select('*')
+                    .eq('page_id', pageId)
+                    .single();
+
+                // Use settings or defaults
+                const startTime = bookingSettings?.start_time || '09:00';
+                const endTime = bookingSettings?.end_time || '17:00';
+                const availableDays = bookingSettings?.available_days || [1, 2, 3, 4, 5]; // 0=Sun, 1=Mon, etc.
+                const slotDuration = bookingSettings?.slot_duration || 60;
+
+                console.log('[WEBHOOK] Using booking settings:', {
+                    startTime,
+                    endTime,
+                    availableDays,
+                    slotDuration
+                });
+
+                // Parse start/end hours
+                const startHour = parseInt(startTime.split(':')[0]);
+                const endHour = parseInt(endTime.split(':')[0]);
+
                 // Get next 7 days of available slots
                 const now = new Date();
                 const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -593,17 +617,17 @@ Every response should move the conversation closer to achieving this goal.
                     .lte('start_time', weekFromNow.toISOString())
                     .eq('status', 'scheduled');
 
-                // Generate available slots (9 AM - 5 PM, Mon-Fri)
+                // Generate available slots based on settings
                 const availableSlots = [];
                 for (let d = 1; d <= 7; d++) {
                     const dayDate = new Date(now.getTime() + d * 24 * 60 * 60 * 1000);
                     const dayOfWeek = dayDate.getDay();
 
-                    // Skip weekends
-                    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+                    // Skip if not in available days
+                    if (!availableDays.includes(dayOfWeek)) continue;
 
-                    // Check slots from 9 AM to 5 PM
-                    for (let hour = 9; hour < 17; hour++) {
+                    // Check slots based on configured hours
+                    for (let hour = startHour; hour < endHour; hour++) {
                         const slotStart = new Date(dayDate);
                         slotStart.setHours(hour, 0, 0, 0);
 
@@ -617,7 +641,8 @@ Every response should move the conversation closer to achieving this goal.
                         if (!hasConflict) {
                             const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayOfWeek];
                             const dateStr = dayDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                            availableSlots.push(`${dayName} ${dateStr}, ${hour}:00 ${hour < 12 ? 'AM' : 'PM'}`);
+                            const timeStr = hour > 12 ? `${hour - 12}:00 PM` : (hour === 12 ? '12:00 PM' : `${hour}:00 AM`);
+                            availableSlots.push(`${dayName} ${dateStr}, ${timeStr}`);
                         }
                     }
                 }
