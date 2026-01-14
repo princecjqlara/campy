@@ -579,11 +579,20 @@ class FacebookService {
             if (!response.ok) {
                 const errorData = await response.json();
                 const errorMessage = errorData.error?.message || 'Failed to send message';
+                const errorCode = errorData.error?.code;
 
-                // If it's a 24-hour window error and we didn't use a tag, retry with tag
-                if (errorMessage.includes('24 hour') && !useMessageTag) {
-                    console.log(`[SEND] Retrying with ACCOUNT_UPDATE tag due to 24h window error`);
-                    return this.sendMessageWithTag(pageId, recipientId, messageText, 'ACCOUNT_UPDATE');
+                console.log('[SEND] Facebook API error:', errorCode, errorMessage);
+
+                // If it's a 24-hour window error (code 10 or message contains window)
+                // Retry with HUMAN_AGENT tag for customer service messaging
+                const isWindowError = errorCode === 10 ||
+                    errorMessage.includes('allowed window') ||
+                    errorMessage.includes('24 hour') ||
+                    errorMessage.includes('outside');
+
+                if (isWindowError && !useMessageTag) {
+                    console.log(`[SEND] Retrying with HUMAN_AGENT tag due to messaging window error`);
+                    return this.sendMessageWithTag(pageId, recipientId, messageText, 'HUMAN_AGENT');
                 }
 
                 throw new Error(errorMessage);
@@ -621,9 +630,9 @@ class FacebookService {
 
     /**
      * Send a message with MESSAGE_TAG for messaging outside 24-hour window
-     * Uses ACCOUNT_UPDATE tag for bulk/automated messages
+     * Uses HUMAN_AGENT tag for customer service/manual messaging
      */
-    async sendMessageWithTag(pageId, recipientId, messageText, tag = 'ACCOUNT_UPDATE') {
+    async sendMessageWithTag(pageId, recipientId, messageText, tag = 'HUMAN_AGENT') {
         try {
             const pages = await this.getConnectedPages();
             const page = pages.find(p => p.page_id === pageId);
