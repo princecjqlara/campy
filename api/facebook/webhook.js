@@ -328,30 +328,50 @@ async function handleIncomingMessage(pageId, event) {
  */
 async function triggerAIResponse(db, conversationId, pageId, conversation) {
     try {
+        console.log('[WEBHOOK] === AI AUTO-RESPONSE CHECK ===');
+        console.log('[WEBHOOK] Conversation ID:', conversationId);
+        console.log('[WEBHOOK] Page ID:', pageId);
+        console.log('[WEBHOOK] Conversation data:', JSON.stringify({
+            ai_enabled: conversation?.ai_enabled,
+            human_takeover: conversation?.human_takeover,
+            cooldown_until: conversation?.cooldown_until,
+            participant_name: conversation?.participant_name
+        }));
+
         // Check if AI is enabled globally (from settings)
-        const { data: settings } = await db
+        const { data: settings, error: settingsError } = await db
             .from('settings')
             .select('value')
             .eq('key', 'ai_chatbot_config')
             .single();
 
-        const config = settings?.value || {};
+        if (settingsError) {
+            console.log('[WEBHOOK] Settings fetch error (may not exist yet):', settingsError.message);
+        }
 
-        // Check if auto-respond is enabled (default: true)
+        const config = settings?.value || {};
+        console.log('[WEBHOOK] AI Config:', JSON.stringify({
+            auto_respond: config.auto_respond_to_new_messages,
+            hasKnowledgeBase: !!config.knowledge_base,
+            hasSystemPrompt: !!config.system_prompt
+        }));
+
+        // Check if auto-respond is enabled (default: TRUE - enabled unless explicitly disabled)
         if (config.auto_respond_to_new_messages === false) {
-            console.log('[WEBHOOK] AI auto-respond is disabled globally');
+            console.log('[WEBHOOK] ❌ AI auto-respond is disabled globally');
             return;
         }
 
-        // Check if AI is enabled for this specific conversation
+        // Check if AI is enabled for this specific conversation (default: TRUE)
+        // Only skip if explicitly set to false
         if (conversation?.ai_enabled === false) {
-            console.log('[WEBHOOK] AI is disabled for this conversation');
+            console.log('[WEBHOOK] ❌ AI is disabled for this conversation');
             return;
         }
 
         // Check if in human takeover mode
         if (conversation?.human_takeover === true) {
-            console.log('[WEBHOOK] Conversation is in human takeover mode');
+            console.log('[WEBHOOK] ❌ Conversation is in human takeover mode');
             return;
         }
 
@@ -359,22 +379,31 @@ async function triggerAIResponse(db, conversationId, pageId, conversation) {
         if (conversation?.cooldown_until) {
             const cooldownUntil = new Date(conversation.cooldown_until);
             if (cooldownUntil > new Date()) {
-                console.log(`[WEBHOOK] AI on cooldown until ${cooldownUntil.toISOString()}`);
+                console.log(`[WEBHOOK] ❌ AI on cooldown until ${cooldownUntil.toISOString()}`);
                 return;
             }
         }
 
+        console.log('[WEBHOOK] ✅ All checks passed, proceeding with AI response');
+
         // Get page access token
-        const { data: page } = await db
+        const { data: page, error: pageError } = await db
             .from('facebook_pages')
             .select('page_access_token')
             .eq('page_id', pageId)
             .single();
 
-        if (!page?.page_access_token) {
-            console.error('[WEBHOOK] No page access token found');
+        if (pageError) {
+            console.error('[WEBHOOK] ❌ Page fetch error:', pageError.message);
             return;
         }
+
+        if (!page?.page_access_token) {
+            console.error('[WEBHOOK] ❌ No page access token found');
+            return;
+        }
+
+        console.log('[WEBHOOK] ✅ Page access token found');
 
         // Get recent messages for context
         const { data: messages } = await db
