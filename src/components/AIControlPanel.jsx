@@ -19,6 +19,7 @@ export default function AIControlPanel({ conversationId, participantName, onClos
     const [bestTime, setBestTime] = useState(null);
     const [activeTab, setActiveTab] = useState('status');
     const [showGoalSelector, setShowGoalSelector] = useState(false);
+    const [adminConfig, setAdminConfig] = useState(null); // Admin AI chatbot config
 
     const supabase = getSupabaseClient();
 
@@ -47,6 +48,22 @@ export default function AIControlPanel({ conversationId, participantName, onClos
             setActionLog(logs);
             setGoalTemplates(templates);
             setBestTime(time);
+
+            // Load admin config to check if goals are admin-controlled
+            try {
+                const { data: settings } = await supabase
+                    .from('settings')
+                    .select('value')
+                    .eq('key', 'ai_chatbot_config')
+                    .single();
+                setAdminConfig(settings?.value || null);
+            } catch (e) {
+                // Try localStorage as fallback
+                try {
+                    const localConfig = localStorage.getItem('ai_chatbot_config');
+                    setAdminConfig(localConfig ? JSON.parse(localConfig) : null);
+                } catch { }
+            }
         } catch (error) {
             console.error('Error loading AI panel data:', error);
         }
@@ -414,7 +431,56 @@ export default function AIControlPanel({ conversationId, participantName, onClos
                     {/* Goals Tab */}
                     {activeTab === 'goals' && (
                         <>
-                            {activeGoal ? (
+                            {/* Check if admin has set a global goal */}
+                            {adminConfig?.default_goal && !activeGoal ? (
+                                <div style={styles.section}>
+                                    <h3 style={styles.sectionTitle}>Goal Management</h3>
+                                    <div style={{
+                                        ...styles.statusCard,
+                                        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)',
+                                        border: '1px solid rgba(129, 140, 248, 0.3)'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                                            <span style={{ fontSize: '32px' }}>🔒</span>
+                                            <div>
+                                                <div style={{ fontWeight: 600, fontSize: '16px', color: '#e5e7eb', marginBottom: '4px' }}>
+                                                    Goals Managed by Admin
+                                                </div>
+                                                <div style={{ fontSize: '13px', color: '#9ca3af' }}>
+                                                    A global goal has been set for all contacts
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            padding: '12px',
+                                            background: 'rgba(0,0,0,0.2)',
+                                            borderRadius: '8px'
+                                        }}>
+                                            <span style={{ fontSize: '20px' }}>
+                                                {adminConfig.default_goal === 'booking' ? '📅' :
+                                                    adminConfig.default_goal === 'closing' ? '💰' :
+                                                        adminConfig.default_goal === 'follow_up' ? '🔄' :
+                                                            adminConfig.default_goal === 'qualification' ? '🎯' :
+                                                                adminConfig.default_goal === 'information' ? 'ℹ️' : '🎯'}
+                                            </span>
+                                            <div style={{ color: '#e5e7eb', fontWeight: 500 }}>
+                                                {adminConfig.default_goal === 'booking' ? 'Book a Call' :
+                                                    adminConfig.default_goal === 'closing' ? 'Close Sale' :
+                                                        adminConfig.default_goal === 'follow_up' ? 'Re-engage Lead' :
+                                                            adminConfig.default_goal === 'qualification' ? 'Qualify Lead' :
+                                                                adminConfig.default_goal === 'information' ? 'Provide Information' :
+                                                                    adminConfig.default_goal}
+                                            </div>
+                                        </div>
+                                        <div style={{ marginTop: '12px', fontSize: '12px', color: '#6b7280' }}>
+                                            Contact your admin to change goal settings
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : activeGoal ? (
                                 <div style={styles.section}>
                                     <h3 style={styles.sectionTitle}>Active Goal</h3>
                                     <div style={styles.goalCard}>

@@ -251,7 +251,7 @@ export default async function handler(req, res) {
                         conversation_id: conv.conversation_id,
                         page_id: conv.page_id,
                         action_type: 'silence_detected',
-                        action_data: { hoursSince, scheduledAt: scheduledAt.toISOString() },
+                        action_data: { hoursSince, scheduledAt: bestTime.toISOString() },
                         explanation: `Silence detected (${hoursSince}h). Follow-up scheduled.`
                     });
                 }

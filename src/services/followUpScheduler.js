@@ -60,7 +60,7 @@ export async function calculateBestTimeToContact(conversationId) {
 
         // Still not enough? Use defaults
         if (allEngagements.length < 3) {
-            return getDefaultBestTimes();
+            return getDefaultBestTimes(conversationId);
         }
 
         // Calculate weighted scores for each day/hour combination
@@ -107,7 +107,7 @@ export async function calculateBestTimeToContact(conversationId) {
         const bestSlots = rankedSlots.slice(0, 5);
 
         if (bestSlots.length === 0) {
-            return getDefaultBestTimes();
+            return getDefaultBestTimes(conversationId);
         }
 
         // Calculate confidence
@@ -136,7 +136,7 @@ export async function calculateBestTimeToContact(conversationId) {
 
     } catch (error) {
         console.error('[SCHEDULER] Error calculating best time:', error);
-        return getDefaultBestTimes();
+        return getDefaultBestTimes(conversationId);
     }
 }
 
@@ -178,33 +178,43 @@ async function getNeighborContactData(conversationId, db) {
 
 /**
  * Get default best times (multiple business hours slots)
+ * Uses conversationId to generate consistent but varied defaults per contact
+ * @param {string} conversationId - Optional conversation ID for variation
  */
-function getDefaultBestTimes() {
+function getDefaultBestTimes(conversationId = null) {
     const now = new Date();
 
-    // Default slots: weekday mornings and afternoons
+    // Use conversationId to create variation so different contacts get different defaults
+    let seedValue = 0;
+    if (conversationId) {
+        // Create a simple hash from the conversation ID
+        for (let i = 0; i < conversationId.length; i++) {
+            seedValue = ((seedValue << 5) - seedValue) + conversationId.charCodeAt(i);
+            seedValue |= 0; // Convert to 32-bit integer
+        }
+        seedValue = Math.abs(seedValue);
+    }
+
+    // Map seed to day (1-5 for Mon-Fri) and hour (9-16 for business hours)
+    const primaryDay = 1 + (seedValue % 5); // 1-5 (Mon-Fri)
+    const primaryHour = 9 + ((seedValue >> 8) % 8); // 9-16 (9am-4pm)
+
+    // Generate 5 slots based on the seed, spread across the week
     const defaultSlots = [
-        { dayOfWeek: 1, hourOfDay: 10, score: 0.8 }, // Monday 10am
-        { dayOfWeek: 2, hourOfDay: 14, score: 0.75 }, // Tuesday 2pm
-        { dayOfWeek: 3, hourOfDay: 10, score: 0.7 }, // Wednesday 10am
-        { dayOfWeek: 4, hourOfDay: 15, score: 0.65 }, // Thursday 3pm
-        { dayOfWeek: 5, hourOfDay: 11, score: 0.6 }  // Friday 11am
+        { dayOfWeek: primaryDay, hourOfDay: primaryHour, score: 0.8 },
+        { dayOfWeek: 1 + ((primaryDay) % 5), hourOfDay: 9 + ((primaryHour + 4) % 8), score: 0.75 },
+        { dayOfWeek: 1 + ((primaryDay + 1) % 5), hourOfDay: 9 + ((primaryHour + 2) % 8), score: 0.7 },
+        { dayOfWeek: 1 + ((primaryDay + 2) % 5), hourOfDay: 9 + ((primaryHour + 6) % 8), score: 0.65 },
+        { dayOfWeek: 1 + ((primaryDay + 3) % 5), hourOfDay: 9 + ((primaryHour + 1) % 8), score: 0.6 }
     ];
 
-    // Find next occurrence
-    let nextBestTime = new Date(now);
-    nextBestTime.setHours(10, 0, 0, 0);
-    if (now.getHours() >= 10 || now.getDay() === 0 || now.getDay() === 6) {
-        nextBestTime.setDate(nextBestTime.getDate() + 1);
-        while (nextBestTime.getDay() === 0 || nextBestTime.getDay() === 6) {
-            nextBestTime.setDate(nextBestTime.getDate() + 1);
-        }
-    }
+    // Find next occurrence of the primary slot
+    let nextBestTime = getNextOccurrence(primaryDay, primaryHour);
 
     return {
         bestSlots: defaultSlots,
-        dayOfWeek: 1,
-        hourOfDay: 10,
+        dayOfWeek: primaryDay,
+        hourOfDay: primaryHour,
         confidence: 0.3,
         nextBestTime,
         allNextTimes: defaultSlots.map(s => getNextOccurrence(s.dayOfWeek, s.hourOfDay)),
