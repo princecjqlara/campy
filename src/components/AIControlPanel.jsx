@@ -413,20 +413,41 @@ export default function AIControlPanel({ conversationId, participantName, onClos
                             </div>
 
                             {/* Next Intuition Follow-up Section */}
-                            {(() => {
-                                const nextFollowUp = scheduledFollowUps?.find(f => f.status === 'pending');
-                                if (!nextFollowUp) return null;
+                            <div style={styles.section}>
+                                <h3 style={styles.sectionTitle}>🔮 Next Intuition Follow-up</h3>
+                                {(() => {
+                                    const nextFollowUp = scheduledFollowUps?.find(f => f.status === 'pending');
 
-                                const scheduledDate = new Date(nextFollowUp.scheduled_for);
-                                const now = new Date();
-                                const diffMs = scheduledDate - now;
-                                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                                const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                                const isPast = diffMs < 0;
+                                    if (!nextFollowUp) {
+                                        return (
+                                            <div style={{
+                                                ...styles.statusCard,
+                                                background: 'rgba(107, 114, 128, 0.1)',
+                                                border: '1px solid rgba(107, 114, 128, 0.2)'
+                                            }}>
+                                                <div style={{
+                                                    textAlign: 'center',
+                                                    padding: '16px',
+                                                    color: '#9ca3af'
+                                                }}>
+                                                    <div style={{ fontSize: '24px', marginBottom: '8px' }}>💤</div>
+                                                    <div style={{ fontSize: '13px' }}>No follow-up scheduled yet</div>
+                                                    <div style={{ fontSize: '11px', marginTop: '6px', fontStyle: 'italic' }}>
+                                                        AI will schedule one after detecting silence
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
 
-                                return (
-                                    <div style={styles.section}>
-                                        <h3 style={styles.sectionTitle}>🔮 Next Intuition Follow-up</h3>
+                                    const scheduledDate = new Date(nextFollowUp.scheduled_for);
+                                    const now = new Date();
+                                    const diffMs = scheduledDate - now;
+                                    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                                    const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                                    const isPast = diffMs < 0;
+
+                                    return (
                                         <div style={{
                                             ...styles.statusCard,
                                             background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.15) 0%, rgba(245, 158, 11, 0.15) 100%)',
@@ -468,9 +489,9 @@ export default function AIControlPanel({ conversationId, participantName, onClos
                                                 ⚡ Updates automatically when customer messages
                                             </div>
                                         </div>
-                                    </div>
-                                );
-                            })()}
+                                    );
+                                })()}
+                            </div>
 
                             {bestTime && (
                                 <div style={styles.section}>
