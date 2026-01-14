@@ -440,7 +440,7 @@ export default function AIControlPanel({ conversationId, participantName, onClos
                                         );
                                     }
 
-                                    const scheduledDate = new Date(nextFollowUp.scheduled_for);
+                                    const scheduledDate = new Date(nextFollowUp.scheduled_at);
                                     const now = new Date();
                                     const diffMs = scheduledDate - now;
                                     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));

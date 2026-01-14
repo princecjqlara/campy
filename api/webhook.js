@@ -1154,7 +1154,7 @@ GUIDELINES:
             .insert({
                 conversation_id: conversationId,
                 page_id: pageId,
-                scheduled_for: scheduledAt.toISOString(),
+                scheduled_at: scheduledAt.toISOString(),
                 follow_up_type: analysis.follow_up_type || 'gentle_reminder',
                 reason: analysis.reason || 'AI scheduled follow-up',
                 status: 'pending'

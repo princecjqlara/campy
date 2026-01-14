@@ -329,7 +329,7 @@ AGGRESSIVE TIMING (when NOT skipping):
                     .insert({
                         conversation_id: conv.conversation_id,
                         page_id: conv.page_id,
-                        scheduled_for: scheduledAt.toISOString(),
+                        scheduled_at: scheduledAt.toISOString(),
                         follow_up_type: analysis.follow_up_type,
                         reason: analysis.reason,
                         status: 'pending'
