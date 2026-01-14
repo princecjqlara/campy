@@ -83,7 +83,8 @@ async function calculateBestTimeForContact(db, conversationId) {
 }
 
 /**
- * Get next occurrence of a specific day and hour (capped at 24 hours)
+ * Get next occurrence of a specific day and hour
+ * Schedules at the actual best time - messaging code handles 24h window with tags
  */
 function getNextOccurrence(targetDay, targetHour) {
     const now = new Date();
@@ -105,26 +106,14 @@ function getNextOccurrence(targetDay, targetHour) {
         result.setDate(result.getDate() + 7);
     }
 
-    // CAP AT 24 HOURS - if best time is more than 24h away, use TODAY's occurrence of that hour instead
-    const maxTime = new Date(now.getTime() + (24 * 60 * 60 * 1000));
-    if (result > maxTime) {
-        // Use today's or tomorrow's occurrence of the same hour instead
-        const todayAtHour = new Date(now);
-        todayAtHour.setHours(targetHour, 0, 0, 0);
-
-        if (todayAtHour > now) {
-            return todayAtHour; // Today at that hour
-        } else {
-            todayAtHour.setDate(todayAtHour.getDate() + 1); // Tomorrow at that hour
-            return todayAtHour;
-        }
-    }
+    // No cap - follow-ups can be scheduled at the true best time
+    // The sendMessage function handles 24h window by using ACCOUNT_UPDATE tag
 
     return result;
 }
 
 /**
- * Get next occurrence of a specific hour (today or tomorrow, always within 24h)
+ * Get next occurrence of a specific hour (today or tomorrow)
  */
 function getNextOccurrenceOfHour(targetHour) {
     const now = new Date();
