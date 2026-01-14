@@ -1053,7 +1053,7 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis'
                                                 }}>
-                                                    {conv.last_message_text || 'No messages'}
+                                                    {conv.last_message_from_page ? 'You: ' : ''}{conv.last_message_text || 'No messages'}
                                                 </div>
                                             </div>
                                         </div>
@@ -1176,7 +1176,7 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis'
                                                 }}>
-                                                    {conv.last_message_text || 'No messages'}
+                                                    {conv.last_message_from_page ? 'You: ' : ''}{conv.last_message_text || 'No messages'}
                                                 </div>
                                                 {conv.linked_client && (
                                                     <div style={{
