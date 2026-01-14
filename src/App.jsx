@@ -20,6 +20,7 @@ import MessengerInbox from './components/MessengerInbox';
 import AIAssistantWidget from './components/AIAssistantWidget';
 import BookingPage from './components/BookingPage';
 import TeamOnlinePanel from './components/TeamOnlinePanel';
+import DeadlineAlerts from './components/DeadlineAlerts';
 import { useSupabase } from './hooks/useSupabase';
 import { useScheduledMessageProcessor } from './hooks/useScheduledMessageProcessor';
 import { useClockInOut } from './hooks/useClockInOut';
@@ -489,6 +490,13 @@ function App() {
           {/* Clients Tab Content */}
           {activeMainTab === 'clients' && (
             <>
+              {/* Deadline Alerts - shows clients with urgent deadlines */}
+              <DeadlineAlerts
+                clients={clients}
+                onViewClient={handleOpenViewModal}
+                onEditClient={handleOpenEditModal}
+              />
+
               <StatsGrid metrics={metrics} role={role} />
 
               <FiltersBar
