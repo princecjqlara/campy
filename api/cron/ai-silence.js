@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 /**
  * AI Silence Detection Cron
  * Finds conversations with no activity for 24+ hours and schedules follow-ups
+ * at the contact's best time to contact (not just a fixed interval)
  * Runs every 30 minutes via Vercel cron
  */
 
@@ -15,6 +16,111 @@ function getSupabase() {
         supabase = createClient(url, key);
     }
     return supabase;
+}
+
+/**
+ * Calculate best time to contact based on engagement history
+ * Simplified version for cron (doesn't import from client-side module)
+ */
+async function calculateBestTimeForContact(db, conversationId) {
+    try {
+        // Get engagement history for this contact
+        const { data: engagements } = await db
+            .from('contact_engagement')
+            .select('day_of_week, hour_of_day, response_latency_seconds, engagement_score')
+            .eq('conversation_id', conversationId)
+            .eq('message_direction', 'inbound')
+            .order('message_timestamp', { ascending: false })
+            .limit(20);
+
+        const now = new Date();
+
+        // If no engagement data, use default business hours
+        if (!engagements || engagements.length === 0) {
+            // Default: next occurrence of 10 AM
+            return getNextOccurrenceOfHour(10);
+        }
+
+        // Calculate weighted scores for each day/hour
+        const timeScores = {};
+        for (const eng of engagements) {
+            const key = `${eng.day_of_week}-${eng.hour_of_day}`;
+            if (!timeScores[key]) {
+                timeScores[key] = {
+                    dayOfWeek: eng.day_of_week,
+                    hourOfDay: eng.hour_of_day,
+                    count: 0,
+                    totalScore: 0
+                };
+            }
+            timeScores[key].count++;
+            timeScores[key].totalScore += eng.engagement_score || 1;
+        }
+
+        // Find best slot
+        let bestSlot = null;
+        let bestScore = 0;
+        for (const slot of Object.values(timeScores)) {
+            const score = slot.count * (slot.totalScore / slot.count);
+            if (score > bestScore) {
+                bestScore = score;
+                bestSlot = slot;
+            }
+        }
+
+        if (!bestSlot) {
+            return getNextOccurrenceOfHour(10);
+        }
+
+        // Get next occurrence of best day/hour
+        return getNextOccurrence(bestSlot.dayOfWeek, bestSlot.hourOfDay);
+
+    } catch (error) {
+        console.error('[CRON] Error calculating best time:', error);
+        // Fallback to default
+        return getNextOccurrenceOfHour(10);
+    }
+}
+
+/**
+ * Get next occurrence of a specific day and hour
+ */
+function getNextOccurrence(targetDay, targetHour) {
+    const now = new Date();
+    const result = new Date(now);
+    result.setHours(targetHour, 0, 0, 0);
+
+    // Calculate days until target day
+    const currentDay = now.getDay();
+    let daysUntil = targetDay - currentDay;
+
+    if (daysUntil < 0 || (daysUntil === 0 && now.getHours() >= targetHour)) {
+        daysUntil += 7;
+    }
+
+    result.setDate(result.getDate() + daysUntil);
+
+    // If it's today but in the past, add 7 days
+    if (result <= now) {
+        result.setDate(result.getDate() + 7);
+    }
+
+    return result;
+}
+
+/**
+ * Get next occurrence of a specific hour (today or tomorrow)
+ */
+function getNextOccurrenceOfHour(targetHour) {
+    const now = new Date();
+    const result = new Date(now);
+    result.setHours(targetHour, 0, 0, 0);
+
+    if (result <= now) {
+        result.setDate(result.getDate() + 1);
+    }
+
+    return result;
 }
 
 export default async function handler(req, res) {
@@ -57,14 +163,7 @@ export default async function handler(req, res) {
         // Calculate cutoff time (conversations inactive for X hours)
         const cutoffTime = new Date(now.getTime() - (silenceHours * 60 * 60 * 1000));
 
-        // Find conversations that need follow-up:
-        // 1. AI is enabled
-        // 2. Not in human takeover
-        // 3. Not opted out
-        // 4. Last message was from page (we're waiting for their response)
-        // 5. Last message time is older than cutoff
-        // 6. Not in cooldown
-        // 7. No pending follow-up already scheduled
+        // Find conversations that need follow-up
         const { data: conversations, error } = await db
             .from('facebook_conversations')
             .select(`
@@ -117,18 +216,20 @@ export default async function handler(req, res) {
                 // Calculate hours since last message
                 const hoursSince = Math.floor((now - new Date(conv.last_message_time)) / (1000 * 60 * 60));
 
-                // Schedule follow-up for 2 hours from now (give some buffer)
-                const scheduledAt = new Date(now.getTime() + (2 * 60 * 60 * 1000));
+                // Calculate BEST TIME to contact this person (not just 2 hours from now)
+                const bestTime = await calculateBestTimeForContact(db, conv.conversation_id);
 
-                // Create follow-up
+                console.log(`[CRON] Best time for ${conv.participant_name || conv.conversation_id}: ${bestTime.toISOString()}`);
+
+                // Create follow-up scheduled at their best time
                 const { error: insertError } = await db
                     .from('ai_followup_schedule')
                     .insert({
                         conversation_id: conv.conversation_id,
                         page_id: conv.page_id,
-                        scheduled_at: scheduledAt.toISOString(),
-                        follow_up_type: 'silence',
-                        reason: `No response for ${hoursSince} hours`,
+                        scheduled_at: bestTime.toISOString(),
+                        follow_up_type: 'best_time',
+                        reason: `No response for ${hoursSince} hours - scheduled at best time`,
                         goal_id: conv.active_goal_id,
                         status: 'pending'
                     });
