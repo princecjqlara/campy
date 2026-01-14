@@ -248,31 +248,37 @@ export default async function handler(req, res) {
                                 ? '\n\n⚡ AGGRESSIVE MODE: This contact went silent within the last 24 hours. Be MORE AGGRESSIVE with shorter wait times (1-4 hours preferred). Strike while the iron is hot!'
                                 : '';
 
-                            const analysisPrompt = `Analyze this conversation and determine the optimal follow-up timing.
+                            const analysisPrompt = `You are an aggressive sales AI. Analyze this conversation and determine follow-up strategy.
 
 CONVERSATION (last activity ${hoursSince} hours ago):
 ${messagesSummary}
-${aggressiveNote}
+
+⚡ BE AGGRESSIVE! Follow up quickly unless there's a good reason not to.
 
 You must respond with ONLY valid JSON (no markdown, no explanation):
 {
-  "wait_hours": <number between 1-${maxWaitHours}>,
-  "reason": "<brief explanation why this wait time is appropriate based on the conversation context>",
-  "follow_up_type": "<one of: immediate|gentle_reminder|check_in|urgent|re_engagement>"
+  "skip_followup": <true/false>,
+  "skip_reason": "<if skip_followup is true, explain why>",
+  "wait_hours": <number between 0.5-24>,
+  "reason": "<brief explanation>",
+  "follow_up_type": "<immediate|gentle_reminder|check_in|urgent|re_engagement>"
 }
 
-GUIDELINES${isAggressive ? ' (AGGRESSIVE - use shorter times!)' : ''}:
-${isAggressive ? `- Silent for < 4 hours: wait 1-2 hours (they might be busy, check in soon)
-- Silent for 4-8 hours: wait 2-4 hours (quick reminder)
-- Silent for 8-16 hours: wait 4-6 hours (follow up before end of day)
-- Silent for 16-24 hours: wait 2-4 hours (morning/evening follow-up)
-- Customer showed buying intent: wait 1-2 hours (URGENT)
-- Conversation ended mid-booking: wait 1 hour (IMMEDIATE)` : `- Customer asked for time to think: 24-48 hours
-- Customer comparing prices/competitors: 48-72 hours
-- Conversation ended abruptly mid-discussion: 4-8 hours
-- Customer showed buying intent but didn't commit: 2-4 hours
-- Customer just received info: 24 hours
-- Customer went silent after booking question: 6-12 hours`}`;
+WHEN TO SKIP (skip_followup: true):
+- Customer said "I'll message you later" or "I'll get back to you"
+- Customer specified a time like "call me tomorrow at 2pm" or "message me next week"
+- Customer clearly said they're busy right now ("busy today", "in a meeting", "can't talk now")
+- Customer said "I need to think" and it's been less than 24 hours
+
+AGGRESSIVE TIMING (when NOT skipping):
+- Silent < 2 hours: wait 0.5-1 hour
+- Silent 2-4 hours: wait 1-2 hours
+- Silent 4-8 hours: wait 2-3 hours  
+- Silent 8-24 hours: wait 3-6 hours
+- Showed buying intent: wait 0.5-1 hour (VERY URGENT!)
+- Was about to book: wait 0.5 hour (IMMEDIATE!)
+- Just received pricing: wait 2-4 hours
+- Asked questions: wait 1-2 hours`;
 
                             const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
                                 method: 'POST',
@@ -293,12 +299,20 @@ ${isAggressive ? `- Silent for < 4 hours: wait 1-2 hours (they might be busy, ch
                                 const analysisText = aiResult.choices?.[0]?.message?.content?.trim();
                                 const cleanJson = analysisText.replace(/```json\n?|\n?```/g, '').trim();
                                 const parsed = JSON.parse(cleanJson);
+
+                                // Check if AI says to skip follow-up
+                                if (parsed.skip_followup === true) {
+                                    console.log(`[CRON] ⏸️ SKIPPING ${conv.participant_name}: ${parsed.skip_reason || 'Customer specified callback time or busy'}`);
+                                    results.skipped++;
+                                    continue; // Skip to next conversation
+                                }
+
                                 analysis = {
-                                    wait_hours: Math.min(Math.max(parsed.wait_hours || 24, 1), 72),
+                                    wait_hours: Math.min(Math.max(parsed.wait_hours || 2, 0.5), 24),
                                     reason: parsed.reason || `Silent for ${hoursSince} hours`,
                                     follow_up_type: parsed.follow_up_type || 'gentle_reminder'
                                 };
-                                console.log(`[CRON] AI analysis for ${conv.participant_name}: wait ${analysis.wait_hours}h - ${analysis.reason}`);
+                                console.log(`[CRON] 🔥 AI analysis for ${conv.participant_name}: wait ${analysis.wait_hours}h - ${analysis.reason}`);
                             }
                         } catch (aiErr) {
                             console.log(`[CRON] AI analysis error (using defaults):`, aiErr.message);
