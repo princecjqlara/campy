@@ -17,17 +17,17 @@ const getSupabase = () => {
 };
 
 /**
- * Best Time to Contact result
+ * Best Time to Contact result with multiple recommended time slots
  * @typedef {Object} BestTimeResult
- * @property {number} dayOfWeek - Best day (0-6, Sun-Sat)
- * @property {number} hourOfDay - Best hour (0-23)
+ * @property {Array<{dayOfWeek: number, hourOfDay: number, score: number}>} bestSlots - Top time slots
  * @property {number} confidence - Confidence in prediction (0-1)
  * @property {Date} nextBestTime - Next occurrence of best time
+ * @property {boolean} usedNeighborData - Whether neighbor data was used
  */
 
 /**
- * Calculate the best time to contact a specific conversation
- * Based on historical engagement data
+ * Calculate the best times to contact a specific conversation
+ * Returns multiple time slots, uses neighbor contact data when sparse
  * @param {string} conversationId - Conversation ID
  * @returns {Promise<BestTimeResult>}
  */
@@ -35,26 +35,38 @@ export async function calculateBestTimeToContact(conversationId) {
     try {
         const db = getSupabase();
 
-        // Get engagement history
+        // Get engagement history for this contact
         const { data: engagements, error } = await db
             .from('contact_engagement')
             .select('day_of_week, hour_of_day, response_latency_seconds, engagement_score')
             .eq('conversation_id', conversationId)
-            .eq('message_direction', 'inbound') // Focus on when they respond
+            .eq('message_direction', 'inbound')
             .order('message_timestamp', { ascending: false })
             .limit(50);
 
         if (error) throw error;
 
-        // If no engagement data, use defaults
-        if (!engagements || engagements.length < 3) {
-            return getDefaultBestTime();
+        let dataSource = 'contact';
+        let allEngagements = engagements || [];
+
+        // If not enough data, get neighbor contact data
+        if (!engagements || engagements.length < 5) {
+            const neighborData = await getNeighborContactData(conversationId, db);
+            if (neighborData.length > 0) {
+                allEngagements = [...(engagements || []), ...neighborData];
+                dataSource = 'neighbors';
+            }
+        }
+
+        // Still not enough? Use defaults
+        if (allEngagements.length < 3) {
+            return getDefaultBestTimes();
         }
 
         // Calculate weighted scores for each day/hour combination
         const timeScores = {};
 
-        for (const eng of engagements) {
+        for (const eng of allEngagements) {
             const key = `${eng.day_of_week}-${eng.hour_of_day}`;
 
             if (!timeScores[key]) {
@@ -72,62 +84,116 @@ export async function calculateBestTimeToContact(conversationId) {
             timeScores[key].totalScore += eng.engagement_score || 1;
         }
 
-        // Find best time slot
-        let bestSlot = null;
-        let bestRating = -Infinity;
-
+        // Score all time slots
+        const rankedSlots = [];
         for (const [key, slot] of Object.entries(timeScores)) {
-            // Rating formula: high response count + low latency + high engagement
             const avgLatency = slot.totalLatency / slot.count;
             const avgScore = slot.totalScore / slot.count;
-
-            // Normalize latency (lower is better, max 1 hour considered)
             const latencyFactor = Math.max(0, 1 - (avgLatency / 3600));
-
-            // Combined rating
             const rating = (slot.count * 0.3) + (latencyFactor * 0.4) + (avgScore * 0.3);
 
-            if (rating > bestRating) {
-                bestRating = rating;
-                bestSlot = slot;
-            }
+            rankedSlots.push({
+                dayOfWeek: slot.dayOfWeek,
+                hourOfDay: slot.hourOfDay,
+                score: rating,
+                count: slot.count
+            });
         }
 
-        if (!bestSlot) {
-            return getDefaultBestTime();
+        // Sort by score descending
+        rankedSlots.sort((a, b) => b.score - a.score);
+
+        // Get top 5 time slots (multiple best times)
+        const bestSlots = rankedSlots.slice(0, 5);
+
+        if (bestSlots.length === 0) {
+            return getDefaultBestTimes();
         }
 
-        // Calculate next occurrence of best time
-        const nextBestTime = getNextOccurrence(bestSlot.dayOfWeek, bestSlot.hourOfDay);
+        // Calculate confidence
+        const confidence = Math.min(allEngagements.length / 20, 1) * (dataSource === 'contact' ? 1 : 0.7);
 
-        // Calculate confidence based on data quality
-        const confidence = Math.min(engagements.length / 20, 1) * 0.8 + 0.2;
+        // Get next occurrences for all slots
+        const slotsWithNextTime = bestSlots.map(slot => ({
+            ...slot,
+            nextTime: getNextOccurrence(slot.dayOfWeek, slot.hourOfDay)
+        }));
+
+        // Find soonest next time
+        slotsWithNextTime.sort((a, b) => a.nextTime - b.nextTime);
 
         return {
-            dayOfWeek: bestSlot.dayOfWeek,
-            hourOfDay: bestSlot.hourOfDay,
+            bestSlots: bestSlots,
             confidence,
-            nextBestTime,
-            dataPoints: engagements.length
+            nextBestTime: slotsWithNextTime[0].nextTime,
+            allNextTimes: slotsWithNextTime.map(s => s.nextTime),
+            dataPoints: allEngagements.length,
+            usedNeighborData: dataSource === 'neighbors',
+            // Keep legacy single return for backward compatibility
+            dayOfWeek: bestSlots[0].dayOfWeek,
+            hourOfDay: bestSlots[0].hourOfDay
         };
 
     } catch (error) {
         console.error('[SCHEDULER] Error calculating best time:', error);
-        return getDefaultBestTime();
+        return getDefaultBestTimes();
     }
 }
 
 /**
- * Get default best time (business hours)
+ * Get engagement data from similar/neighbor contacts when current contact has sparse data
+ * @param {string} conversationId - Current conversation ID
+ * @param {Object} db - Supabase client
  */
-function getDefaultBestTime() {
+async function getNeighborContactData(conversationId, db) {
+    try {
+        // Get the page_id for this conversation
+        const { data: conv } = await db
+            .from('facebook_conversations')
+            .select('page_id')
+            .eq('conversation_id', conversationId)
+            .single();
+
+        if (!conv) return [];
+
+        // Get engagement data from other contacts on the same page
+        // This provides "neighbor" data - contacts who interact with the same business
+        const { data: neighborEngagements } = await db
+            .from('contact_engagement')
+            .select('day_of_week, hour_of_day, response_latency_seconds, engagement_score')
+            .eq('page_id', conv.page_id)
+            .neq('conversation_id', conversationId)
+            .eq('message_direction', 'inbound')
+            .order('message_timestamp', { ascending: false })
+            .limit(100);
+
+        console.log(`[SCHEDULER] Using neighbor data: ${neighborEngagements?.length || 0} data points`);
+        return neighborEngagements || [];
+
+    } catch (error) {
+        console.error('[SCHEDULER] Error getting neighbor data:', error);
+        return [];
+    }
+}
+
+/**
+ * Get default best times (multiple business hours slots)
+ */
+function getDefaultBestTimes() {
     const now = new Date();
+
+    // Default slots: weekday mornings and afternoons
+    const defaultSlots = [
+        { dayOfWeek: 1, hourOfDay: 10, score: 0.8 }, // Monday 10am
+        { dayOfWeek: 2, hourOfDay: 14, score: 0.75 }, // Tuesday 2pm
+        { dayOfWeek: 3, hourOfDay: 10, score: 0.7 }, // Wednesday 10am
+        { dayOfWeek: 4, hourOfDay: 15, score: 0.65 }, // Thursday 3pm
+        { dayOfWeek: 5, hourOfDay: 11, score: 0.6 }  // Friday 11am
+    ];
+
+    // Find next occurrence
     let nextBestTime = new Date(now);
-
-    // Default: Next weekday at 10 AM
     nextBestTime.setHours(10, 0, 0, 0);
-
-    // If it's already past 10 AM or weekend, find next weekday
     if (now.getHours() >= 10 || now.getDay() === 0 || now.getDay() === 6) {
         nextBestTime.setDate(nextBestTime.getDate() + 1);
         while (nextBestTime.getDay() === 0 || nextBestTime.getDay() === 6) {
@@ -136,12 +202,20 @@ function getDefaultBestTime() {
     }
 
     return {
-        dayOfWeek: 1, // Monday
-        hourOfDay: 10, // 10 AM
-        confidence: 0.3, // Low confidence (no data)
+        bestSlots: defaultSlots,
+        dayOfWeek: 1,
+        hourOfDay: 10,
+        confidence: 0.3,
         nextBestTime,
-        dataPoints: 0
+        allNextTimes: defaultSlots.map(s => getNextOccurrence(s.dayOfWeek, s.hourOfDay)),
+        dataPoints: 0,
+        usedNeighborData: false
     };
+}
+
+// Keep legacy function for backward compatibility
+function getDefaultBestTime() {
+    return getDefaultBestTimes();
 }
 
 /**
@@ -594,6 +668,232 @@ export async function getEngagementAnalytics(conversationId) {
     }
 }
 
+/**
+ * Detect when customer mentions their availability (e.g., "I'm free at 3pm", "available tomorrow")
+ * @param {string} messageText - Message text to analyze
+ * @returns {Object|null} Parsed availability information
+ */
+export function detectAvailabilityMention(messageText) {
+    if (!messageText) return null;
+
+    const text = messageText.toLowerCase();
+    const now = new Date();
+
+    // Patterns for detecting availability
+    const patterns = [
+        // "I'm free at 3pm", "available at 2:30"
+        /(?:i'?m |i am |i'll be |i will be )?(?:free|available|open|can talk|can meet|can chat)(?: at| around| by)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i,
+        // "call me at 5", "message me at 3pm"
+        /(?:call|text|message|reach|contact) (?:me |us )?(?:at|around|by)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i,
+        // "after 6pm", "before noon"
+        /(?:free |available )?(?:after|before|around)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm|noon|midnight)?/i,
+        // "tomorrow at 2", "today at 5pm"
+        /(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*(?:at|around)?\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i,
+        // "in 2 hours", "in 30 minutes"
+        /(?:free |available )?in\s*(\d+)\s*(hour|minute|min|hr)s?/i,
+        // "5 minutes from now"
+        /(\d+)\s*(hour|minute|min|hr)s?\s*(?:from now|from here)/i
+    ];
+
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match) {
+            let targetTime = new Date(now);
+
+            // Handle relative time (in X hours/minutes)
+            if (match[0].includes('in ') || match[0].includes('from now')) {
+                const amount = parseInt(match[1]);
+                const unit = match[2]?.toLowerCase();
+
+                if (unit?.startsWith('hour') || unit === 'hr') {
+                    targetTime.setHours(targetTime.getHours() + amount);
+                } else if (unit?.startsWith('min')) {
+                    targetTime.setMinutes(targetTime.getMinutes() + amount);
+                }
+
+                return {
+                    detected: true,
+                    targetTime,
+                    rawMatch: match[0],
+                    isRelative: true,
+                    delayMinutes: unit?.startsWith('hour') ? amount * 60 : amount
+                };
+            }
+
+            // Handle day mentions
+            const dayMention = match[0].match(/(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i);
+            if (dayMention) {
+                const day = dayMention[1].toLowerCase();
+                if (day === 'tomorrow') {
+                    targetTime.setDate(targetTime.getDate() + 1);
+                } else if (day !== 'today') {
+                    // Find next occurrence of that day
+                    const dayIndex = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(day);
+                    let daysUntil = dayIndex - now.getDay();
+                    if (daysUntil <= 0) daysUntil += 7;
+                    targetTime.setDate(targetTime.getDate() + daysUntil);
+                }
+            }
+
+            // Parse time
+            const hourMatch = match[0].match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+            if (hourMatch) {
+                let hour = parseInt(hourMatch[1]);
+                const minutes = parseInt(hourMatch[2]) || 0;
+                const meridiem = hourMatch[3]?.toLowerCase();
+
+                if (meridiem === 'pm' && hour < 12) hour += 12;
+                if (meridiem === 'am' && hour === 12) hour = 0;
+
+                // If no am/pm specified: assume PM for hours 1-7, AM for 8-11
+                if (!meridiem && hour >= 1 && hour <= 7) hour += 12;
+
+                targetTime.setHours(hour, minutes, 0, 0);
+            }
+
+            // If target time is in the past, add a day
+            if (targetTime < now) {
+                targetTime.setDate(targetTime.getDate() + 1);
+            }
+
+            return {
+                detected: true,
+                targetTime,
+                rawMatch: match[0],
+                isRelative: false,
+                delayMinutes: Math.round((targetTime - now) / (1000 * 60))
+            };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Schedule a quick intuition-based follow-up (within minutes/hours, not days)
+ * Used for keeping leads warm with rapid responses
+ * @param {string} conversationId - Conversation ID
+ * @param {Object} options - Quick follow-up options
+ */
+export async function scheduleQuickFollowUp(conversationId, options = {}) {
+    const {
+        delayMinutes = 5,
+        reason = 'Quick intuition-based follow-up',
+        type = 'intuition_quick',
+        message = null,
+        ignoreExisting = false // Allow multiple per day
+    } = options;
+
+    try {
+        const db = getSupabase();
+
+        // Check safety
+        const safety = await checkSafetyStatus(conversationId);
+        if (safety.optedOut || safety.humanTakeover) {
+            return { success: false, error: safety.optedOut ? 'opted_out' : 'human_takeover' };
+        }
+
+        // Get conversation
+        const { data: conv } = await db
+            .from('facebook_conversations')
+            .select('page_id, cooldown_until, last_ai_message_at')
+            .eq('conversation_id', conversationId)
+            .single();
+
+        if (!conv) {
+            return { success: false, error: 'conversation_not_found' };
+        }
+
+        // Check cooldown (but allow shorter cooldown for quick follow-ups)
+        const now = new Date();
+        if (conv.cooldown_until) {
+            const cooldown = new Date(conv.cooldown_until);
+            // For quick follow-ups, use a 30-minute minimum cooldown instead of hours
+            const quickCooldownEnd = conv.last_ai_message_at
+                ? new Date(new Date(conv.last_ai_message_at).getTime() + 30 * 60 * 1000)
+                : new Date(0);
+
+            if (now < quickCooldownEnd && !ignoreExisting) {
+                const waitMinutes = Math.ceil((quickCooldownEnd - now) / (60 * 1000));
+                return { success: false, error: `quick_cooldown`, waitMinutes };
+            }
+        }
+
+        // Don't cancel existing follow-ups for quick ones - allow stacking
+        if (!ignoreExisting) {
+            const { data: existing } = await db
+                .from('ai_followup_schedule')
+                .select('id, scheduled_at')
+                .eq('conversation_id', conversationId)
+                .eq('status', 'pending')
+                .limit(5);
+
+            // Allow max 3 pending follow-ups per conversation
+            if (existing && existing.length >= 3) {
+                return { success: false, error: 'too_many_pending', count: existing.length };
+            }
+        }
+
+        // Schedule the quick follow-up
+        const targetTime = new Date(now.getTime() + delayMinutes * 60 * 1000);
+
+        const { data: followUp, error } = await db
+            .from('ai_followup_schedule')
+            .insert({
+                conversation_id: conversationId,
+                page_id: conv.page_id,
+                scheduled_at: targetTime.toISOString(),
+                follow_up_type: type,
+                reason,
+                message_template: message,
+                status: 'pending'
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        console.log(`[SCHEDULER] Quick follow-up scheduled for ${conversationId} in ${delayMinutes} minutes`);
+
+        return {
+            success: true,
+            followUp,
+            scheduledAt: targetTime,
+            delayMinutes
+        };
+
+    } catch (error) {
+        console.error('[SCHEDULER] Error scheduling quick follow-up:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+/**
+ * Schedule follow-up based on customer's mentioned availability
+ * @param {string} conversationId - Conversation ID
+ * @param {string} messageText - Message containing availability mention
+ */
+export async function scheduleBasedOnAvailability(conversationId, messageText) {
+    const availability = detectAvailabilityMention(messageText);
+
+    if (!availability?.detected) {
+        return { success: false, detected: false };
+    }
+
+    const result = await scheduleFollowUp(conversationId, {
+        scheduledAt: availability.targetTime,
+        type: 'customer_availability',
+        reason: `Customer mentioned availability: "${availability.rawMatch}"`,
+        useBestTime: false
+    });
+
+    return {
+        ...result,
+        detected: true,
+        availability
+    };
+}
+
 export default {
     calculateBestTimeToContact,
     scheduleFollowUp,
@@ -603,5 +903,9 @@ export default {
     markFollowUpSent,
     markFollowUpFailed,
     recordEngagement,
-    getEngagementAnalytics
+    getEngagementAnalytics,
+    // New exports
+    detectAvailabilityMention,
+    scheduleQuickFollowUp,
+    scheduleBasedOnAvailability
 };
