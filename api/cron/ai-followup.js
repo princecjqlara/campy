@@ -56,7 +56,8 @@ export default async function handler(req, res) {
                     takeover_until,
                     opt_out,
                     cooldown_until,
-                    ai_enabled
+                    ai_enabled,
+                    last_message_time
                 ),
                 page:page_id(
                     page_id,
@@ -144,12 +145,13 @@ export default async function handler(req, res) {
                     messageText = await generateFollowUpMessage(followUp, conversation);
                 }
 
-                // Send the message
+                // Send the message (pass last_message_time for 24h window check)
                 const sendResult = await sendMessage(
                     page.page_id,
                     conversation.participant_id,
                     messageText,
-                    page.page_access_token
+                    page.page_access_token,
+                    conversation.last_message_time
                 );
 
                 if (sendResult.success) {
@@ -228,29 +230,60 @@ async function generateFollowUpMessage(followUp, conversation) {
     return templates[followUp.follow_up_type] || templates.manual;
 }
 
-async function sendMessage(pageId, recipientId, text, accessToken) {
+async function sendMessage(pageId, recipientId, text, accessToken, lastMessageTime = null) {
     try {
+        // Check if we're outside the 24-hour window
+        const now = new Date();
+        let useMessageTag = false;
+        let hourssinceLastActivity = 0;
+
+        if (lastMessageTime) {
+            const lastActivity = new Date(lastMessageTime);
+            hourssinceLastActivity = (now - lastActivity) / (1000 * 60 * 60);
+            // Facebook requires MESSAGE_TAG for messages sent >24 hours after last user message
+            useMessageTag = hourssinceLastActivity > 24;
+        }
+
+        console.log(`[CRON] Sending message - Hours since last activity: ${hourssinceLastActivity.toFixed(1)}, Using tag: ${useMessageTag}`);
+
+        // Build request body
+        const requestBody = {
+            recipient: { id: recipientId },
+            message: { text }
+        };
+
+        // Add MESSAGE_TAG if outside 24-hour window
+        if (useMessageTag) {
+            requestBody.messaging_type = 'MESSAGE_TAG';
+            requestBody.tag = 'ACCOUNT_UPDATE'; // Use ACCOUNT_UPDATE for follow-ups
+            console.log(`[CRON] Using ACCOUNT_UPDATE tag for message (${hourssinceLastActivity.toFixed(1)}h since last activity)`);
+        }
+
         const response = await fetch(
             `https://graph.facebook.com/v18.0/${pageId}/messages?access_token=${accessToken}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    recipient: { id: recipientId },
-                    message: { text },
-                    messaging_type: 'MESSAGE_TAG',
-                    tag: 'CONFIRMED_EVENT_UPDATE' // Use appropriate tag for follow-ups
-                })
+                body: JSON.stringify(requestBody)
             }
         );
 
         if (!response.ok) {
             const errorData = await response.json();
-            return { success: false, error: errorData.error?.message || 'Send failed' };
+            const errorMessage = errorData.error?.message || 'Send failed';
+
+            // Check if it's a 24-hour window error and we didn't use a tag
+            if (errorMessage.includes('24 hour') && !useMessageTag) {
+                console.log(`[CRON] Retrying with ACCOUNT_UPDATE tag due to 24h window error`);
+                // Retry with tag
+                return sendMessage(pageId, recipientId, text, accessToken, new Date(0).toISOString());
+            }
+
+            return { success: false, error: errorMessage };
         }
 
         const result = await response.json();
-        return { success: true, messageId: result.message_id };
+        return { success: true, messageId: result.message_id, usedTag: useMessageTag };
     } catch (error) {
         return { success: false, error: error.message };
     }
