@@ -591,8 +591,8 @@ class FacebookService {
                     errorMessage.includes('outside');
 
                 if (isWindowError && !useMessageTag) {
-                    console.log(`[SEND] Retrying with HUMAN_AGENT tag due to messaging window error`);
-                    return this.sendMessageWithTag(pageId, recipientId, messageText, 'HUMAN_AGENT');
+                    console.log(`[SEND] Retrying with ACCOUNT_UPDATE tag due to messaging window error`);
+                    return this.sendMessageWithTag(pageId, recipientId, messageText, 'ACCOUNT_UPDATE');
                 }
 
                 throw new Error(errorMessage);
@@ -630,9 +630,9 @@ class FacebookService {
 
     /**
      * Send a message with MESSAGE_TAG for messaging outside 24-hour window
-     * Uses HUMAN_AGENT tag for customer service/manual messaging
+     * Uses ACCOUNT_UPDATE tag for messaging outside 24-hour window
      */
-    async sendMessageWithTag(pageId, recipientId, messageText, tag = 'HUMAN_AGENT') {
+    async sendMessageWithTag(pageId, recipientId, messageText, tag = 'ACCOUNT_UPDATE') {
         try {
             const pages = await this.getConnectedPages();
             const page = pages.find(p => p.page_id === pageId);
