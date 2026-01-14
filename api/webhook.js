@@ -1009,16 +1009,139 @@ When customer wants to schedule/book, share this: ${config.booking_url}
 
         console.log('[WEBHOOK] AI reply sent successfully!');
 
-        // Set cooldown
-        await db
-            .from('facebook_conversations')
-            .update({
-                cooldown_until: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString()
-            })
-            .eq('conversation_id', conversationId);
+        // INTELLIGENT FOLLOW-UP: Analyze conversation to schedule smart follow-up
+        try {
+            await analyzeAndScheduleFollowUp(db, conversationId, pageId, conversation, recentMessages);
+        } catch (followUpErr) {
+            console.log('[WEBHOOK] Follow-up analysis error (non-fatal):', followUpErr.message);
+        }
 
     } catch (error) {
         console.error('[WEBHOOK] AI Error:', error);
+    }
+}
+
+/**
+ * Intelligent Follow-up Analysis
+ * AI analyzes the conversation to decide how long to wait before following up
+ */
+async function analyzeAndScheduleFollowUp(db, conversationId, pageId, conversation, recentMessages) {
+    console.log('[WEBHOOK] === INTELLIGENT FOLLOW-UP ANALYSIS ===');
+
+    // Build conversation summary for AI
+    const messagesSummary = recentMessages.slice(-5).map(m =>
+        `${m.is_from_page ? 'AI' : 'Customer'}: ${m.message_text || '[attachment]'}`
+    ).join('\n');
+
+    const analysisPrompt = `Analyze this conversation and determine the optimal follow-up timing.
+
+CONVERSATION:
+${messagesSummary}
+
+You must respond with ONLY valid JSON (no markdown, no explanation):
+{
+  "wait_hours": <number between 1-168>,
+  "reason": "<brief explanation why this wait time is appropriate>",
+  "follow_up_type": "<one of: immediate|gentle_reminder|check_in|urgent|re_engagement>",
+  "urgency": "<one of: low|medium|high>"
+}
+
+GUIDELINES:
+- If customer asked for time to think/consult someone: 24-48 hours
+- If customer is comparing prices/competitors: 48-72 hours  
+- If customer said they're busy today: 12-24 hours
+- If conversation ended abruptly mid-discussion: 4-8 hours
+- If customer showed buying intent but didn't commit: 2-4 hours
+- If customer just received info: 24 hours
+- If customer went silent after booking question: 6-12 hours`;
+
+    try {
+        // Get page access token for AI call
+        const { data: page } = await db
+            .from('facebook_pages')
+            .select('page_access_token')
+            .eq('page_id', pageId)
+            .single();
+
+        const nvidiaKey = process.env.NVIDIA_API_KEY;
+        if (!nvidiaKey) {
+            console.log('[WEBHOOK] No NVIDIA API key for follow-up analysis');
+            return;
+        }
+
+        const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${nvidiaKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: 'meta/llama-3.1-8b-instruct',
+                messages: [{ role: 'user', content: analysisPrompt }],
+                max_tokens: 200,
+                temperature: 0.3
+            })
+        });
+
+        if (!response.ok) {
+            console.error('[WEBHOOK] Follow-up AI call failed');
+            return;
+        }
+
+        const aiResult = await response.json();
+        const analysisText = aiResult.choices?.[0]?.message?.content?.trim();
+
+        console.log('[WEBHOOK] Follow-up analysis raw:', analysisText);
+
+        // Parse JSON response
+        let analysis;
+        try {
+            // Clean up the response (remove markdown if present)
+            const cleanJson = analysisText.replace(/```json\n?|\n?```/g, '').trim();
+            analysis = JSON.parse(cleanJson);
+        } catch (parseErr) {
+            console.log('[WEBHOOK] Could not parse follow-up analysis, using defaults');
+            analysis = { wait_hours: 24, reason: 'Standard follow-up', follow_up_type: 'gentle_reminder', urgency: 'low' };
+        }
+
+        // Calculate scheduled time
+        const waitHours = Math.min(Math.max(analysis.wait_hours || 24, 1), 168); // 1 hour to 7 days
+        const scheduledAt = new Date(Date.now() + waitHours * 60 * 60 * 1000);
+
+        console.log('[WEBHOOK] Follow-up decision:', {
+            wait_hours: waitHours,
+            reason: analysis.reason,
+            type: analysis.follow_up_type,
+            scheduled_at: scheduledAt.toISOString()
+        });
+
+        // Cancel any existing pending follow-ups for this conversation
+        await db
+            .from('ai_followup_schedule')
+            .update({ status: 'cancelled' })
+            .eq('conversation_id', conversationId)
+            .eq('status', 'pending');
+
+        // Schedule the new intelligent follow-up
+        const { error: scheduleError } = await db
+            .from('ai_followup_schedule')
+            .insert({
+                conversation_id: conversationId,
+                page_id: pageId,
+                scheduled_for: scheduledAt.toISOString(),
+                follow_up_type: analysis.follow_up_type || 'gentle_reminder',
+                reason: analysis.reason || 'AI scheduled follow-up',
+                status: 'pending'
+            });
+
+        if (scheduleError) {
+            console.error('[WEBHOOK] Failed to schedule follow-up:', scheduleError.message);
+        } else {
+            console.log(`[WEBHOOK] ✅ Intelligent follow-up scheduled for ${scheduledAt.toLocaleString()} (${waitHours}h)`);
+        }
+
+    } catch (err) {
+        console.error('[WEBHOOK] Follow-up analysis exception:', err.message);
     }
 }
 
