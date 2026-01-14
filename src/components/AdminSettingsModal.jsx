@@ -1871,31 +1871,60 @@ const AdminSettingsModal = ({ onClose, getExpenses, saveExpenses, getAIPrompts, 
               <div style={{ marginBottom: '2rem' }}>
                 <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>⚙️ Core Settings</h5>
                 <div style={{ display: 'grid', gap: '0.75rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
                     <span>Auto-respond to new messages</span>
-                    <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '48px', height: '24px' }}>
-                      <input type="checkbox" defaultChecked={true} onChange={(e) => {
+                    <input
+                      type="checkbox"
+                      defaultChecked={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.auto_respond_to_new_messages !== false;
+                        } catch { return true; }
+                      })()}
+                      onChange={(e) => {
                         const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
                         config.auto_respond_to_new_messages = e.target.checked;
                         localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
-                      }} style={{ opacity: 0, width: 0, height: 0 }} />
-                      <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#6366f1', borderRadius: '24px' }}></span>
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                      }}
+                      style={{ width: '20px', height: '20px', accentColor: '#6366f1', cursor: 'pointer' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
                     <span>Enable silence follow-ups (24h inactivity)</span>
-                    <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '48px', height: '24px' }}>
-                      <input type="checkbox" defaultChecked={true} style={{ opacity: 0, width: 0, height: 0 }} />
-                      <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#6366f1', borderRadius: '24px' }}></span>
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                    <input
+                      type="checkbox"
+                      defaultChecked={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.enable_silence_followups !== false;
+                        } catch { return true; }
+                      })()}
+                      onChange={(e) => {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        config.enable_silence_followups = e.target.checked;
+                        localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                      }}
+                      style={{ width: '20px', height: '20px', accentColor: '#6366f1', cursor: 'pointer' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
                     <span>Auto-takeover on low confidence</span>
-                    <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '48px', height: '24px' }}>
-                      <input type="checkbox" defaultChecked={true} style={{ opacity: 0, width: 0, height: 0 }} />
-                      <span style={{ position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#6366f1', borderRadius: '24px' }}></span>
-                    </label>
-                  </div>
+                    <input
+                      type="checkbox"
+                      defaultChecked={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.auto_takeover_on_low_confidence !== false;
+                        } catch { return true; }
+                      })()}
+                      onChange={(e) => {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        config.auto_takeover_on_low_confidence = e.target.checked;
+                        localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                      }}
+                      style={{ width: '20px', height: '20px', accentColor: '#6366f1', cursor: 'pointer' }}
+                    />
+                  </label>
                 </div>
               </div>
 

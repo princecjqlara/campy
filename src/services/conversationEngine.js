@@ -174,30 +174,51 @@ export async function generateResponse(conversationId, options = {}) {
  * Build the system prompt for the AI
  */
 function buildSystemPrompt(conversation, activeGoal, ragContext) {
-    let prompt = `You are an AI assistant for a business messaging platform. You are chatting with ${conversation.participant_name || 'a potential customer'} via Facebook Messenger.
+    // Get admin-configured settings from localStorage (client-side) or fallback
+    let adminConfig = {};
+    try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+            adminConfig = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+        }
+    } catch (e) {
+        console.warn('[ENGINE] Could not read admin config:', e);
+    }
 
-## Core Guidelines:
-- Be friendly, professional, and helpful
-- Keep responses concise and conversational (this is chat, not email)
-- Use natural language, not corporate speak
-- If you don't know something, say so honestly
-- Never make up information or give false promises
-- Respect the customer's time and attention
+    // Use admin-configured system prompt or default
+    const defaultPrompt = `You are a friendly and professional AI sales assistant. 
+Be helpful, concise, and guide customers toward booking a consultation.
+Use a conversational tone appropriate for Messenger chat.
+Be enthusiastic but not pushy.`;
+
+    let prompt = adminConfig.system_prompt || defaultPrompt;
+
+    // Add context header
+    prompt = `## Role and Personality:
+${prompt}
 
 ## Context:
+- Platform: Facebook Messenger
 - Page: ${conversation.page?.page_name || 'Business Page'}
-- Contact: ${conversation.participant_name || 'Unknown'}
+- Contact Name: ${conversation.participant_name || 'Unknown'}
 `;
+
+    // Add admin-configured knowledge base
+    if (adminConfig.knowledge_base) {
+        prompt += `
+## Knowledge Base (use this to answer questions):
+${adminConfig.knowledge_base}
+`;
+    }
 
     // Add RAG context if available
     if (ragContext && ragContext.length > 0) {
-        prompt += `\n## Knowledge Base (use this to answer questions):
+        prompt += `
+## Additional Context:
 ${ragContext}
-
-Important: If the customer asks something not covered in the knowledge base, acknowledge that you'll need to check with the team.`;
+`;
     }
 
-    // Add extracted details if available
+    // Add extracted customer details if available
     if (conversation.extracted_details && Object.keys(conversation.extracted_details).length > 0) {
         prompt += `\n## Known Customer Details:`;
         const details = conversation.extracted_details;
@@ -205,7 +226,76 @@ Important: If the customer asks something not covered in the knowledge base, ack
         if (details.niche) prompt += `\n- Industry: ${details.niche}`;
         if (details.phone) prompt += `\n- Phone: ${details.phone}`;
         if (details.email) prompt += `\n- Email: ${details.email}`;
+        if (details.budget) prompt += `\n- Budget: ${details.budget}`;
+        if (details.timeline) prompt += `\n- Timeline: ${details.timeline}`;
+        prompt += '\n';
     }
+
+    // Add conversation summary if available
+    if (conversation.summary) {
+        prompt += `
+## Conversation Summary:
+${conversation.summary}
+`;
+    }
+
+    // Add active goal info
+    if (activeGoal) {
+        prompt += `
+## Current Goal: ${activeGoal.goal_type}
+${activeGoal.description || ''}
+Progress: ${Math.round((activeGoal.progress || 0) * 100)}%
+`;
+    }
+
+    // Add bot rules (do's)
+    if (adminConfig.bot_rules_dos) {
+        prompt += `
+## DO's (Things you SHOULD do):
+${adminConfig.bot_rules_dos}
+`;
+    }
+
+    // Add bot rules (don'ts)
+    if (adminConfig.bot_rules_donts) {
+        prompt += `
+## DON'Ts (Things you should NEVER do):
+${adminConfig.bot_rules_donts}
+`;
+    }
+
+    // Add escalation triggers
+    if (adminConfig.escalation_triggers) {
+        prompt += `
+## Escalation Triggers (hand off to human when):
+${adminConfig.escalation_triggers}
+If any of these occur, politely say you'll have a team member follow up.
+`;
+    }
+
+    // Add custom goals
+    if (adminConfig.custom_goals) {
+        prompt += `
+## Additional Goals to achieve:
+${adminConfig.custom_goals}
+`;
+    }
+
+    // Add booking info
+    if (adminConfig.booking_url) {
+        prompt += `
+## Booking:
+When ready to book a meeting, share this link: ${adminConfig.booking_url}
+`;
+    }
+
+    // Add important notes
+    prompt += `
+## Important Notes:
+- If the customer asks something not covered in the knowledge base, acknowledge that you'll need to check with the team.
+- Refer to previous conversation context when relevant.
+- Keep responses concise - this is chat, not email.
+`;
 
     return prompt;
 }
