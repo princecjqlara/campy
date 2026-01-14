@@ -236,29 +236,43 @@ export default async function handler(req, res) {
                     const nvidiaKey = process.env.NVIDIA_API_KEY;
                     if (nvidiaKey) {
                         try {
+                            // Build conversation summary
                             const messagesSummary = recentMessages.reverse().map(m =>
                                 `${m.is_from_page ? 'AI' : 'Customer'}: ${m.message_text || '[attachment]'}`
                             ).join('\n');
+
+                            // Determine if we should be aggressive (within first 24 hours)
+                            const isAggressive = hoursSince <= 24;
+                            const maxWaitHours = isAggressive ? 8 : 72;
+                            const aggressiveNote = isAggressive
+                                ? '\n\n⚡ AGGRESSIVE MODE: This contact went silent within the last 24 hours. Be MORE AGGRESSIVE with shorter wait times (1-4 hours preferred). Strike while the iron is hot!'
+                                : '';
 
                             const analysisPrompt = `Analyze this conversation and determine the optimal follow-up timing.
 
 CONVERSATION (last activity ${hoursSince} hours ago):
 ${messagesSummary}
+${aggressiveNote}
 
 You must respond with ONLY valid JSON (no markdown, no explanation):
 {
-  "wait_hours": <number between 1-72>,
+  "wait_hours": <number between 1-${maxWaitHours}>,
   "reason": "<brief explanation why this wait time is appropriate based on the conversation context>",
   "follow_up_type": "<one of: immediate|gentle_reminder|check_in|urgent|re_engagement>"
 }
 
-GUIDELINES:
-- Customer asked for time to think: 24-48 hours
+GUIDELINES${isAggressive ? ' (AGGRESSIVE - use shorter times!)' : ''}:
+${isAggressive ? `- Silent for < 4 hours: wait 1-2 hours (they might be busy, check in soon)
+- Silent for 4-8 hours: wait 2-4 hours (quick reminder)
+- Silent for 8-16 hours: wait 4-6 hours (follow up before end of day)
+- Silent for 16-24 hours: wait 2-4 hours (morning/evening follow-up)
+- Customer showed buying intent: wait 1-2 hours (URGENT)
+- Conversation ended mid-booking: wait 1 hour (IMMEDIATE)` : `- Customer asked for time to think: 24-48 hours
 - Customer comparing prices/competitors: 48-72 hours
 - Conversation ended abruptly mid-discussion: 4-8 hours
 - Customer showed buying intent but didn't commit: 2-4 hours
 - Customer just received info: 24 hours
-- Customer went silent after booking question: 6-12 hours`;
+- Customer went silent after booking question: 6-12 hours`}`;
 
                             const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
                                 method: 'POST',
