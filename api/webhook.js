@@ -94,6 +94,57 @@ async function fetchFacebookUserName(userId, pageId) {
 }
 
 /**
+ * Fetch the real Facebook conversation ID for a participant
+ * This queries Facebook's Conversations API to find the thread ID
+ */
+async function fetchRealConversationId(participantId, pageId) {
+    const db = getSupabase();
+    if (!db) return null;
+
+    try {
+        // Get page access token
+        const { data: page } = await db
+            .from('facebook_pages')
+            .select('page_access_token')
+            .eq('page_id', pageId)
+            .single();
+
+        if (!page?.page_access_token || page.page_access_token === 'pending') {
+            console.log('[WEBHOOK] No valid page access token for conversation lookup');
+            return null;
+        }
+
+        // Query Facebook's conversations endpoint to find the thread with this participant
+        const url = `https://graph.facebook.com/v18.0/${pageId}/conversations?fields=id,participants&access_token=${page.page_access_token}`;
+        console.log(`[WEBHOOK] Fetching conversations to find thread for participant: ${participantId}`);
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            console.error('[WEBHOOK] Failed to fetch conversations from Facebook');
+            return null;
+        }
+
+        const data = await response.json();
+
+        // Find the conversation that includes this participant
+        for (const conv of data.data || []) {
+            const participants = conv.participants?.data || [];
+            const hasParticipant = participants.some(p => p.id === participantId);
+            if (hasParticipant) {
+                console.log(`[WEBHOOK] Found real conversation ID: ${conv.id} for participant ${participantId}`);
+                return conv.id;
+            }
+        }
+
+        console.log(`[WEBHOOK] Conversation not found for participant ${participantId} in first page of results`);
+        return null;
+    } catch (err) {
+        console.error('[WEBHOOK] Error fetching real conversation ID:', err.message);
+        return null;
+    }
+}
+
+/**
  * Facebook Webhook Handler
  * Handles verification (GET) and incoming messages (POST)
  */
@@ -229,8 +280,21 @@ async function handleIncomingMessage(pageId, event) {
             .eq('page_id', pageId)
             .single();
 
-        // Use existing conversation_id or create temporary one for new conversations
-        const conversationId = existingConv?.conversation_id || `t_${participantId}`;
+        // Get conversation_id - for new conversations, try to fetch the real one from Facebook
+        let conversationId = existingConv?.conversation_id;
+
+        if (!conversationId) {
+            // Try to get the real Facebook conversation ID
+            const realConvId = await fetchRealConversationId(participantId, pageId);
+            if (realConvId) {
+                conversationId = realConvId;
+                console.log(`[WEBHOOK] Using real Facebook conversation ID: ${conversationId}`);
+            } else {
+                // Fallback to temporary ID only if we can't get the real one
+                conversationId = `t_${participantId}`;
+                console.log(`[WEBHOOK] Using temporary conversation ID: ${conversationId}`);
+            }
+        }
 
         // Only increment unread for messages FROM the user, not echoes
         const newUnreadCount = isFromPage ? (existingConv?.unread_count || 0) : (existingConv?.unread_count || 0) + 1;
