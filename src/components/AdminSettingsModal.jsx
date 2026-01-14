@@ -2185,29 +2185,33 @@ Always ask for the customer's name and business type early in the conversation.`
                 </div>
               </div>
 
-              {/* Follow-up Prompts */}
+              {/* Follow-up Prompts - AI Generates Messages */}
               <div style={{ marginBottom: '2rem' }}>
-                <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>💬 Follow-up Message Templates</h5>
+                <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>🤖 Follow-up Prompts (AI-Generated)</h5>
                 <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                  Templates for automated follow-up messages. Use {'{name}'} for contact's first name.
+                  Give the AI instructions for what to achieve in follow-ups. The AI will generate contextual messages based on the conversation history.
                 </p>
+
+                <div style={{ padding: '0.75rem 1rem', background: 'rgba(99, 102, 241, 0.1)', borderRadius: 'var(--radius-md)', marginBottom: '1rem', border: '1px solid rgba(99, 102, 241, 0.2)' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--primary)' }}>💡 The AI will read the conversation and generate a personalized follow-up based on your prompt</span>
+                </div>
 
                 <div style={{ display: 'grid', gap: '1rem' }}>
                   <div className="form-group">
-                    <label className="form-label">Initial Follow-up (after 24h silence)</label>
+                    <label className="form-label">Initial Follow-up Prompt (after 24h silence)</label>
                     <textarea
                       className="form-input"
                       rows={2}
-                      placeholder="Hi {name}! 👋 Just checking in - did you have any questions about our services?"
+                      placeholder="Check in with the contact, remind them of what was discussed, and ask if they have any questions."
                       defaultValue={(() => {
                         try {
                           const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
-                          return config.followup_initial || '';
+                          return config.followup_prompt_initial || '';
                         } catch { return ''; }
                       })()}
                       onChange={(e) => {
                         const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
-                        config.followup_initial = e.target.value;
+                        config.followup_prompt_initial = e.target.value;
                         localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
                       }}
                       style={{ resize: 'vertical', fontSize: '0.875rem' }}
@@ -2215,20 +2219,20 @@ Always ask for the customer's name and business type early in the conversation.`
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Second Follow-up (after 48h)</label>
+                    <label className="form-label">Second Follow-up Prompt (after 48h)</label>
                     <textarea
                       className="form-input"
                       rows={2}
-                      placeholder="Hey {name}! 😊 I noticed you might still be thinking about it. Would a quick call help answer your questions?"
+                      placeholder="Gently follow up, offer to schedule a call, and provide value by sharing relevant info about our services."
                       defaultValue={(() => {
                         try {
                           const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
-                          return config.followup_second || '';
+                          return config.followup_prompt_second || '';
                         } catch { return ''; }
                       })()}
                       onChange={(e) => {
                         const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
-                        config.followup_second = e.target.value;
+                        config.followup_prompt_second = e.target.value;
                         localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
                       }}
                       style={{ resize: 'vertical', fontSize: '0.875rem' }}
@@ -2236,20 +2240,20 @@ Always ask for the customer's name and business type early in the conversation.`
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Re-engagement (after 7+ days)</label>
+                    <label className="form-label">Re-engagement Prompt (after 7+ days)</label>
                     <textarea
                       className="form-input"
                       rows={2}
-                      placeholder="Hi {name}! We have some new packages that might interest you. Want to hear about them? 🚀"
+                      placeholder="Re-engage the contact with something new (promo, new service, case study). Make them feel valued and not forgotten."
                       defaultValue={(() => {
                         try {
                           const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
-                          return config.followup_reengagement || '';
+                          return config.followup_prompt_reengagement || '';
                         } catch { return ''; }
                       })()}
                       onChange={(e) => {
                         const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
-                        config.followup_reengagement = e.target.value;
+                        config.followup_prompt_reengagement = e.target.value;
                         localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
                       }}
                       style={{ resize: 'vertical', fontSize: '0.875rem' }}
