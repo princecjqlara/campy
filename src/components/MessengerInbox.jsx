@@ -4,6 +4,7 @@ import { facebookService } from '../services/facebookService';
 import WarningDashboard from './WarningDashboard';
 import AIControlPanel from './AIControlPanel';
 import AIChatbotSettings from './AIChatbotSettings';
+import BestTimesOverview from './BestTimesOverview';
 import { extractContactDetails, generateNotes } from '../services/aiConversationAnalyzer';
 
 const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
@@ -97,6 +98,7 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
     const [showWarningDashboard, setShowWarningDashboard] = useState(false);
     const [showAIControlPanel, setShowAIControlPanel] = useState(false);
     const [showAIChatbotSettings, setShowAIChatbotSettings] = useState(false);
+    const [showBestTimes, setShowBestTimes] = useState(false);
 
 
     // Advanced filtering state
@@ -2801,6 +2803,13 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
             {showAIChatbotSettings && (
                 <AIChatbotSettings
                     onClose={() => setShowAIChatbotSettings(false)}
+                />
+            )}
+
+            {/* Best Times Overview Modal */}
+            {showBestTimes && (
+                <BestTimesOverview
+                    onClose={() => setShowBestTimes(false)}
                 />
             )}
         </>

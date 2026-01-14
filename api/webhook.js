@@ -469,11 +469,17 @@ When customer wants to schedule/book, share this: ${config.booking_url}
 
         aiPrompt += `
 ## Important Guidelines
-- Keep responses SHORT and conversational (this is chat, not email)
 - Use Taglish naturally - mix English and Tagalog as Filipinos do
 - Be friendly but professional
 - If unsure about something, say you'll have a team member follow up
 - If user sends an image, describe what you see and respond appropriately
+
+## Message Format Rules
+- For SHORT responses (1-2 sentences): Just respond normally
+- For LONGER responses: Split your message using ||| as a separator between parts
+- Each part should be a complete thought that can stand alone
+- Example for multi-part response:
+  "Hi! Thanks for reaching out 😊 ||| Ang basic package natin is ₱1,799/month, kasama na lahat ng essentials. ||| Gusto mo ba malaman yung mga inclusions?"
 `;
 
         // Build messages array, handling images for vision models
@@ -562,7 +568,7 @@ When customer wants to schedule/book, share this: ${config.booking_url}
                         model: model,
                         messages: aiMessages,
                         temperature: 0.7,
-                        max_tokens: 400
+                        max_tokens: 400 // AI controls message splitting via ||| delimiter
                     })
                 });
 
@@ -595,36 +601,17 @@ When customer wants to schedule/book, share this: ${config.booking_url}
         console.log('[WEBHOOK] AI Reply:', aiReply.substring(0, 80) + '...');
         console.log('[WEBHOOK] AI Reply length:', aiReply.length);
 
-        // Split long messages (Facebook limit is 2000 chars, but shorter is better for chat)
-        const MAX_MSG_LENGTH = 500; // Reduced for better chat experience
-        const messageParts = [];
+        // Split messages using AI's ||| delimiter (AI decides where to split)
+        // Fall back to single message if no delimiters
+        let messageParts = [];
 
-        if (aiReply.length <= MAX_MSG_LENGTH) {
-            messageParts.push(aiReply);
+        if (aiReply.includes('|||')) {
+            // AI decided to split the message
+            messageParts = aiReply.split('|||').map(p => p.trim()).filter(p => p.length > 0);
+            console.log(`[WEBHOOK] AI split into ${messageParts.length} parts`);
         } else {
-            console.log('[WEBHOOK] Splitting long message...');
-            // Split by paragraphs first, then by sentences
-            let remaining = aiReply;
-            while (remaining.length > 0) {
-                if (remaining.length <= MAX_MSG_LENGTH) {
-                    messageParts.push(remaining);
-                    break;
-                }
-
-                // Try to split at paragraph break
-                let splitIndex = remaining.lastIndexOf('\n\n', MAX_MSG_LENGTH);
-                if (splitIndex === -1 || splitIndex < MAX_MSG_LENGTH / 2) {
-                    // Try sentence break
-                    splitIndex = remaining.lastIndexOf('. ', MAX_MSG_LENGTH);
-                }
-                if (splitIndex === -1 || splitIndex < MAX_MSG_LENGTH / 2) {
-                    // Force split at max length
-                    splitIndex = MAX_MSG_LENGTH;
-                }
-
-                messageParts.push(remaining.substring(0, splitIndex + 1).trim());
-                remaining = remaining.substring(splitIndex + 1).trim();
-            }
+            // Single message (AI decided it's short enough)
+            messageParts.push(aiReply);
         }
 
         console.log(`[WEBHOOK] Sending ${messageParts.length} message part(s)`);
