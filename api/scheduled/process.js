@@ -301,7 +301,7 @@ export default async function handler(req, res) {
                                     recipient: { id: recipientId },
                                     message: { text: message },
                                     messaging_type: 'MESSAGE_TAG',
-                                    tag: 'HUMAN_AGENT'
+                                    tag: 'ACCOUNT_UPDATE'
                                 })
                             }
                         );
