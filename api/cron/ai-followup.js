@@ -154,20 +154,36 @@ export default async function handler(req, res) {
             cleanedUp: 0
         };
 
-        // CLEANUP: Cancel all stale pending follow-ups (scheduled > 6 hours ago but never processed)
-        // This clears out old stuck follow-ups from previous code versions
-        const staleCleanupThreshold = new Date(now.getTime() - (6 * 60 * 60 * 1000)); // 6 hours ago
-        const { data: staleFollowups, error: cleanupQueryError } = await db
+        // CLEANUP: Cancel all stale pending follow-ups
+        // Stale = scheduled more than 2 hours ago (overdue) OR more than 12 hours in the future (old "best time" logic)
+        // New logic schedules 5-720 minutes (12 hours max) ahead, so anything beyond is stale
+        const overdueThreshold = new Date(now.getTime() - (2 * 60 * 60 * 1000)); // 2 hours ago
+        const tooFarFutureThreshold = new Date(now.getTime() + (12 * 60 * 60 * 1000)); // 12 hours from now
+
+        // First, get overdue pending follow-ups
+        const { data: overdueFollowups } = await db
             .from('ai_followup_schedule')
             .select('id')
             .eq('status', 'pending')
-            .lt('scheduled_at', staleCleanupThreshold.toISOString());
+            .lt('scheduled_at', overdueThreshold.toISOString());
 
-        if (!cleanupQueryError && staleFollowups && staleFollowups.length > 0) {
-            console.log(`[CRON] 🧹 Cleaning up ${staleFollowups.length} stale pending follow-ups`);
+        // Then, get future-dated pending follow-ups (scheduled too far ahead)
+        const { data: futureDatedFollowups } = await db
+            .from('ai_followup_schedule')
+            .select('id')
+            .eq('status', 'pending')
+            .gt('scheduled_at', tooFarFutureThreshold.toISOString());
+
+        const staleFollowups = [
+            ...(overdueFollowups || []),
+            ...(futureDatedFollowups || [])
+        ];
+
+        if (staleFollowups.length > 0) {
+            console.log(`[CRON] 🧹 Cleaning up ${staleFollowups.length} stale pending follow-ups (${overdueFollowups?.length || 0} overdue, ${futureDatedFollowups?.length || 0} too far in future)`);
             await db
                 .from('ai_followup_schedule')
-                .update({ status: 'cancelled', error_message: 'Auto-cancelled: overdue for more than 6 hours' })
+                .update({ status: 'cancelled', error_message: 'Auto-cancelled: stale follow-up replaced with fresh timing' })
                 .in('id', staleFollowups.map(f => f.id));
             results.cleanedUp = staleFollowups.length;
         }
