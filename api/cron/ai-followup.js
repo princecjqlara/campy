@@ -204,36 +204,14 @@ export default async function handler(req, res) {
 
         for (const conv of conversations) {
             try {
-                // Only delete STALE follow-ups (scheduled time passed more than 10 mins ago but never sent)
-                // This prevents deleting follow-ups that are scheduled for the future
-                const staleThreshold = new Date(now.getTime() - 10 * 60 * 1000).toISOString(); // 10 mins ago
-                const { data: existing } = await db
+                // Quick check if there is already a pending follow-up - skip if so
+                const { count } = await db
                     .from('ai_followup_schedule')
-                    .select('id')
+                    .select('id', { count: 'exact', head: true })
                     .eq('conversation_id', conv.conversation_id)
-                    .eq('status', 'pending')
-                    .lt('scheduled_at', staleThreshold); // Only select ones that passed 10+ mins ago
+                    .eq('status', 'pending');
 
-                if (existing && existing.length > 0) {
-                    await db
-                        .from('ai_followup_schedule')
-                        .delete()
-                        .eq('conversation_id', conv.conversation_id)
-                        .eq('status', 'pending')
-                        .lt('scheduled_at', staleThreshold);
-                    console.log(`[CRON] Deleted ${existing.length} STALE follow-ups for ${conv.participant_name || conv.conversation_id}`);
-                }
-
-                // Check if there's already a pending follow-up scheduled (not stale) - skip if so
-                const { data: pendingFollowups } = await db
-                    .from('ai_followup_schedule')
-                    .select('id, scheduled_at')
-                    .eq('conversation_id', conv.conversation_id)
-                    .eq('status', 'pending')
-                    .limit(1);
-
-                if (pendingFollowups && pendingFollowups.length > 0) {
-                    console.log(`[CRON] Skipping ${conv.participant_name || conv.conversation_id} - already has pending follow-up`);
+                if (count && count > 0) {
                     results.skipped++;
                     continue;
                 }
@@ -416,3 +394,4 @@ export const config = {
         bodyParser: true
     }
 };
+
