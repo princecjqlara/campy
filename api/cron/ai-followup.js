@@ -154,26 +154,33 @@ export default async function handler(req, res) {
             cleanedUp: 0
         };
 
-        // CLEANUP: Cancel all stale pending follow-ups
-        // Stale = CREATED more than 2 hours ago but still pending
-        // This catches ALL old stuck follow-ups regardless of scheduled_at
-        const staleCreatedThreshold = new Date(now.getTime() - (2 * 60 * 60 * 1000)); // 2 hours ago
-
-        const { data: staleFollowups } = await db
+        // DEBUG: First, let's see what pending follow-ups actually exist
+        const { data: allPendingFollowups } = await db
             .from('ai_followup_schedule')
-            .select('id, scheduled_at, created_at')
+            .select('id, conversation_id, scheduled_at, created_at, status')
             .eq('status', 'pending')
-            .lt('created_at', staleCreatedThreshold.toISOString());
+            .limit(5);
 
-        console.log(`[CRON] DEBUG - Found ${staleFollowups?.length || 0} stale follow-ups (created > 2h ago)`);
+        console.log(`[CRON] DEBUG - Total pending follow-ups in DB: ${allPendingFollowups?.length || 0}`);
+        if (allPendingFollowups && allPendingFollowups.length > 0) {
+            console.log(`[CRON] DEBUG - Sample: created_at=${allPendingFollowups[0].created_at}, scheduled_at=${allPendingFollowups[0].scheduled_at}`);
+            console.log(`[CRON] DEBUG - Current time: ${now.toISOString()}`);
+        }
 
-        if (staleFollowups && staleFollowups.length > 0) {
-            console.log(`[CRON] 🧹 Cleaning up ${staleFollowups.length} stale pending follow-ups (created before ${staleCreatedThreshold.toISOString()})`);
+        // ONE-TIME AGGRESSIVE CLEANUP: Cancel ALL pending follow-ups to reset the system
+        // This will allow fresh follow-ups to be created with proper timing
+        const { data: allPendingToCancel } = await db
+            .from('ai_followup_schedule')
+            .select('id')
+            .eq('status', 'pending');
+
+        if (allPendingToCancel && allPendingToCancel.length > 0) {
+            console.log(`[CRON] 🧹 AGGRESSIVE CLEANUP: Cancelling ALL ${allPendingToCancel.length} pending follow-ups`);
             await db
                 .from('ai_followup_schedule')
-                .update({ status: 'cancelled', error_message: 'Auto-cancelled: stale follow-up replaced with fresh timing' })
-                .in('id', staleFollowups.map(f => f.id));
-            results.cleanedUp = staleFollowups.length;
+                .update({ status: 'cancelled', error_message: 'One-time cleanup: resetting all pending follow-ups' })
+                .in('id', allPendingToCancel.map(f => f.id));
+            results.cleanedUp = allPendingToCancel.length;
         }
 
         // Get AI chatbot config
