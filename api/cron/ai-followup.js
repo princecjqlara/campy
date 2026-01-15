@@ -59,22 +59,20 @@ export default async function handler(req, res) {
             timedOut: false
         };
 
-        // Quick cleanup of stale pending follow-ups (scheduled more than 2 hours ago)
-        const staleThreshold = new Date(now.getTime() - (2 * 60 * 60 * 1000)).toISOString();
-        const { data: staleFollowups } = await db
+        // ONE-TIME RESET: Cancel ALL pending follow-ups to test with new timing
+        // This allows fresh follow-ups to be created with 1-5 min timing
+        const { data: allPending } = await db
             .from('ai_followup_schedule')
             .select('id')
-            .eq('status', 'pending')
-            .lt('scheduled_at', staleThreshold)
-            .limit(50);
+            .eq('status', 'pending');
 
-        if (staleFollowups && staleFollowups.length > 0) {
-            console.log(`[CRON] 🧹 Cleaning up ${staleFollowups.length} stale follow-ups`);
+        if (allPending && allPending.length > 0) {
+            console.log(`[CRON] 🧹 ONE-TIME RESET: Cancelling ALL ${allPending.length} pending follow-ups for fresh timing`);
             await db
                 .from('ai_followup_schedule')
-                .update({ status: 'cancelled', error_message: 'Cancelled - stale pending followup' })
-                .in('id', staleFollowups.map(f => f.id));
-            results.cleanedUp = staleFollowups.length;
+                .update({ status: 'cancelled', error_message: 'Reset for new timing' })
+                .in('id', allPending.map(f => f.id));
+            results.cleanedUp = allPending.length;
         }
 
         if (checkTimeout()) {
@@ -155,24 +153,24 @@ export default async function handler(req, res) {
                 const minutesSince = Math.floor((now - new Date(conv.last_message_time)) / (1000 * 60));
                 const hoursSince = Math.floor(minutesSince / 60);
 
-                // FAST heuristic-based timing (no slow AI API calls)
+                // FAST timing for testing (1-5 minutes instead of 30-180)
                 let waitMinutes;
                 let reason;
 
                 if (minutesSince < 60) {
-                    waitMinutes = 30;
+                    waitMinutes = 1; // 1 min for testing
                     reason = `Silent for ${minutesSince} mins - quick check-in`;
                 } else if (minutesSince < 120) {
-                    waitMinutes = 45;
+                    waitMinutes = 2;
                     reason = `Silent for ${hoursSince}h - gentle follow-up`;
                 } else if (minutesSince < 240) {
-                    waitMinutes = 60;
+                    waitMinutes = 3;
                     reason = `Silent for ${hoursSince}h - check back in`;
                 } else if (minutesSince < 480) {
-                    waitMinutes = 120;
+                    waitMinutes = 4;
                     reason = `Silent for ${hoursSince}h - giving space`;
                 } else {
-                    waitMinutes = 180;
+                    waitMinutes = 5;
                     reason = `Silent for ${hoursSince}h - longer follow-up`;
                 }
 

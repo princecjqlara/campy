@@ -204,17 +204,25 @@ export default async function handler(req, res) {
 
         try {
             // DEBUG: First, let's see ALL pending follow-ups to understand what's in the table
-            const { data: allPendingFollowups } = await supabase
+            const { data: allPendingFollowups, error: debugError } = await supabase
                 .from('ai_followup_schedule')
-                .select('id, conversation_id, scheduled_at, status, created_at')
+                .select('id, conversation_id, scheduled_at, status, created_at, follow_up_type')
                 .eq('status', 'pending')
                 .order('scheduled_at', { ascending: true })
                 .limit(10);
 
-            console.log(`[AI FOLLOWUP] DEBUG - All pending in table: ${allPendingFollowups?.length || 0}`);
+            console.log(`[AI FOLLOWUP] DEBUG - Pending follow-ups: ${allPendingFollowups?.length || 0}, error: ${debugError?.message || 'none'}`);
             if (allPendingFollowups && allPendingFollowups.length > 0) {
-                console.log(`[AI FOLLOWUP] DEBUG - First pending scheduled_at: ${allPendingFollowups[0].scheduled_at}`);
-                console.log(`[AI FOLLOWUP] DEBUG - Current time (now): ${now}`);
+                const first = allPendingFollowups[0];
+                const scheduledTime = new Date(first.scheduled_at);
+                const nowTime = new Date(now);
+                const minutesUntilDue = Math.round((scheduledTime - nowTime) / (1000 * 60));
+                console.log(`[AI FOLLOWUP] DEBUG - First pending:`);
+                console.log(`[AI FOLLOWUP]   scheduled_at: ${first.scheduled_at}`);
+                console.log(`[AI FOLLOWUP]   created_at: ${first.created_at}`);
+                console.log(`[AI FOLLOWUP]   follow_up_type: ${first.follow_up_type}`);
+                console.log(`[AI FOLLOWUP]   current time: ${now}`);
+                console.log(`[AI FOLLOWUP]   minutes until due: ${minutesUntilDue} (negative = overdue)`);
             }
 
             // Get pending AI follow-ups that are due
