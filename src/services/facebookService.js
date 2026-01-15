@@ -924,6 +924,105 @@ class FacebookService {
     }
 
     /**
+     * Extract name from message content using common patterns
+     * Looks for patterns like "I'm John", "My name is John", "This is John", etc.
+     */
+    extractNameFromMessageContent(messages) {
+        if (!messages || messages.length === 0) return null;
+
+        // Common name introduction patterns
+        const namePatterns = [
+            /(?:i'?m|im|i am)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+            /(?:my name is|my name's|name is|name's)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+            /(?:this is|it's|its)\s+([A-Z][a-z]+)(?:\s+here|\s+speaking)?/i,
+            /(?:hey|hi|hello),?\s+(?:this is\s+)?([A-Z][a-z]+)\s+here/i,
+            /^([A-Z][a-z]+)\s+here[.!]?$/i,
+            /(?:call me|you can call me)\s+([A-Z][a-z]+)/i,
+        ];
+
+        // Check customer messages (not from page) for name patterns
+        for (const msg of messages) {
+            if (msg.is_from_page) continue;
+            const text = msg.message_text || '';
+
+            for (const pattern of namePatterns) {
+                const match = text.match(pattern);
+                if (match && match[1]) {
+                    const extractedName = match[1].trim();
+                    // Validate it looks like a real name (2-30 chars, letters/spaces only)
+                    if (extractedName.length >= 2 && extractedName.length <= 30 && /^[A-Za-z\s]+$/.test(extractedName)) {
+                        console.log(`[EXTRACT_NAME] Found name "${extractedName}" in message: "${text.substring(0, 50)}..."`);
+                        return extractedName;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Update all unknown contact names by extracting from their messages
+     * Returns count of updated contacts
+     */
+    async updateUnknownContactNames() {
+        console.log('[UPDATE_NAMES] Starting batch update for unknown contacts...');
+
+        try {
+            // Get all conversations with unknown/null names
+            const { data: unknownConvs, error: fetchError } = await getSupabase()
+                .from('facebook_conversations')
+                .select('conversation_id, participant_name')
+                .or('participant_name.is.null,participant_name.eq.Unknown,participant_name.eq.');
+
+            if (fetchError) throw fetchError;
+
+            console.log(`[UPDATE_NAMES] Found ${unknownConvs?.length || 0} contacts with unknown names`);
+
+            let updatedCount = 0;
+            const results = [];
+
+            for (const conv of unknownConvs || []) {
+                // Get messages for this conversation
+                const { data: messages } = await getSupabase()
+                    .from('facebook_messages')
+                    .select('message_text, is_from_page, timestamp')
+                    .eq('conversation_id', conv.conversation_id)
+                    .order('timestamp', { ascending: true })
+                    .limit(20);
+
+                if (!messages || messages.length === 0) continue;
+
+                // Try to extract name from messages
+                const extractedName = this.extractNameFromMessageContent(messages);
+
+                if (extractedName) {
+                    // Update the conversation with extracted name
+                    const { error: updateError } = await getSupabase()
+                        .from('facebook_conversations')
+                        .update({
+                            participant_name: extractedName,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('conversation_id', conv.conversation_id);
+
+                    if (!updateError) {
+                        updatedCount++;
+                        results.push({ conversation_id: conv.conversation_id, name: extractedName });
+                        console.log(`[UPDATE_NAMES] Updated ${conv.conversation_id} -> "${extractedName}"`);
+                    }
+                }
+            }
+
+            console.log(`[UPDATE_NAMES] Completed. Updated ${updatedCount} contacts.`);
+            return { updated: updatedCount, results };
+        } catch (error) {
+            console.error('[UPDATE_NAMES] Error:', error.message);
+            throw error;
+        }
+    }
+
+    /**
      * Subscribe to real-time message updates
      */
     subscribeToMessages(callback) {
