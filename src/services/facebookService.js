@@ -508,9 +508,9 @@ class FacebookService {
 
     /**
      * Get messages for a conversation from database
-     * Loads only the most recent 100 messages for performance
+     * Loads only the most recent 30 messages for fast initial load
      */
-    async getMessages(conversationId, limit = 100) {
+    async getMessages(conversationId, limit = 20) {
         try {
             const { data, error } = await getSupabase()
                 .from('facebook_messages')
@@ -524,6 +524,31 @@ class FacebookService {
             return (data || []).reverse();
         } catch (error) {
             console.error('Error fetching messages:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Get older messages for pagination (load more on scroll up)
+     * @param {string} conversationId - Conversation ID
+     * @param {string} beforeTimestamp - Load messages older than this timestamp
+     * @param {number} limit - Number of messages to load (default 30)
+     */
+    async getMoreMessages(conversationId, beforeTimestamp, limit = 30) {
+        try {
+            const { data, error } = await getSupabase()
+                .from('facebook_messages')
+                .select('*')
+                .eq('conversation_id', conversationId)
+                .lt('timestamp', beforeTimestamp)
+                .order('timestamp', { ascending: false })
+                .limit(limit);
+
+            if (error) throw error;
+            // Reverse to maintain chronological order
+            return (data || []).reverse();
+        } catch (error) {
+            console.error('Error fetching more messages:', error);
             return [];
         }
     }

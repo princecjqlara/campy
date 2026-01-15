@@ -607,6 +607,32 @@ export function useFacebookMessenger() {
         }
     }, [selectedConversation, loadMessages]);
 
+    // Load more (older) messages - for scroll-up pagination
+    const loadMoreMessages = useCallback(async () => {
+        if (!selectedConversation || messages.length === 0) return [];
+
+        try {
+            // Get timestamp of oldest message
+            const oldestMessage = messages[0];
+            if (!oldestMessage?.timestamp) return [];
+
+            const olderMessages = await facebookService.getMoreMessages(
+                selectedConversation.conversation_id,
+                oldestMessage.timestamp
+            );
+
+            if (olderMessages.length > 0) {
+                // Prepend older messages
+                setMessages(prev => [...olderMessages, ...prev]);
+            }
+
+            return olderMessages;
+        } catch (err) {
+            console.error('Error loading more messages:', err);
+            return [];
+        }
+    }, [selectedConversation, messages]);
+
     // Link conversation to client
     const linkToClient = useCallback(async (conversationId, clientId) => {
         try {
@@ -944,6 +970,7 @@ export function useFacebookMessenger() {
         searchConversations: searchConversationsAction,
         syncAllConversations,
         syncMessages,
+        loadMoreMessages,
         linkToClient,
         refreshContactName,
         assignToUser,
