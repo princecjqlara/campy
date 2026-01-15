@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * Debug endpoint to check AI follow-up schedule status
- * Shows failed records with their error messages
+ * Debug endpoint to check and manage AI follow-up schedule
+ * Shows status, failed records with errors, and can cleanup old records
+ * Add ?cleanup=true to delete cancelled/old failed records
  */
 export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -18,23 +19,34 @@ export default async function handler(req, res) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
     const now = new Date().toISOString();
+    const doCleanup = req.query.cleanup === 'true';
 
     try {
-        // Check failed records to see error messages
-        const { data: failedRecords } = await supabase
-            .from('ai_followup_schedule')
-            .select('id, conversation_id, page_id, status, error_message, created_at')
-            .eq('status', 'failed')
-            .order('created_at', { ascending: false })
-            .limit(10);
+        let cleanupResults = null;
 
-        // Check pending records
-        const { data: pendingRecords } = await supabase
-            .from('ai_followup_schedule')
-            .select('id, conversation_id, page_id, scheduled_at, status, created_at')
-            .eq('status', 'pending')
-            .order('created_at', { ascending: false })
-            .limit(10);
+        // If cleanup requested, delete cancelled and old failed records
+        if (doCleanup) {
+            // Delete all cancelled records
+            const { data: deletedCancelled } = await supabase
+                .from('ai_followup_schedule')
+                .delete()
+                .eq('status', 'cancelled')
+                .select('id');
+
+            // Delete failed records older than 1 hour
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            const { data: deletedFailed } = await supabase
+                .from('ai_followup_schedule')
+                .delete()
+                .eq('status', 'failed')
+                .lt('created_at', oneHourAgo)
+                .select('id');
+
+            cleanupResults = {
+                deletedCancelled: deletedCancelled?.length || 0,
+                deletedFailed: deletedFailed?.length || 0
+            };
+        }
 
         // Count by status
         const { data: allRecords } = await supabase
@@ -46,36 +58,42 @@ export default async function handler(req, res) {
             statusCounts[r.status] = (statusCounts[r.status] || 0) + 1;
         }
 
-        // If there are pending records, update them to be due NOW for testing
-        const pastTime = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-        const { data: updated } = await supabase
+        // Check failed records to see error messages
+        const { data: failedRecords } = await supabase
             .from('ai_followup_schedule')
-            .update({ scheduled_at: pastTime })
-            .eq('status', 'pending')
-            .select('id');
+            .select('id, conversation_id, page_id, error_message, created_at')
+            .eq('status', 'failed')
+            .order('created_at', { ascending: false })
+            .limit(5);
 
-        // Query what would be due
+        // Check pending records
+        const { data: pendingRecords } = await supabase
+            .from('ai_followup_schedule')
+            .select('id, conversation_id, scheduled_at, created_at')
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+        // Query what's currently due
         const { data: dueNow } = await supabase
             .from('ai_followup_schedule')
-            .select('id, conversation_id, page_id, scheduled_at')
+            .select('id')
             .eq('status', 'pending')
-            .lte('scheduled_at', now)
-            .limit(10);
+            .lte('scheduled_at', now);
 
         return res.status(200).json({
             currentTime: now,
             statusCounts,
             pendingCount: pendingRecords?.length || 0,
-            pendingRecords: pendingRecords?.slice(0, 3),
+            pendingSample: pendingRecords?.slice(0, 3),
+            dueNowCount: dueNow?.length || 0,
             failedCount: failedRecords?.length || 0,
-            failedWithErrors: failedRecords?.map(r => ({
-                id: r.id,
+            failedSample: failedRecords?.slice(0, 3).map(r => ({
                 conversation_id: r.conversation_id,
-                page_id: r.page_id,
                 error: r.error_message
             })),
-            updatedToBeeDue: updated?.length || 0,
-            dueNowCount: dueNow?.length || 0
+            cleanup: cleanupResults,
+            tip: 'Add ?cleanup=true to delete cancelled and old failed records'
         });
     } catch (error) {
         return res.status(500).json({ error: error.message });
