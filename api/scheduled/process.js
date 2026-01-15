@@ -203,6 +203,20 @@ export default async function handler(req, res) {
         let aiFollowupsFailed = 0;
 
         try {
+            // DEBUG: First, let's see ALL pending follow-ups to understand what's in the table
+            const { data: allPendingFollowups } = await supabase
+                .from('ai_followup_schedule')
+                .select('id, conversation_id, scheduled_at, status, created_at')
+                .eq('status', 'pending')
+                .order('scheduled_at', { ascending: true })
+                .limit(10);
+
+            console.log(`[AI FOLLOWUP] DEBUG - All pending in table: ${allPendingFollowups?.length || 0}`);
+            if (allPendingFollowups && allPendingFollowups.length > 0) {
+                console.log(`[AI FOLLOWUP] DEBUG - First pending scheduled_at: ${allPendingFollowups[0].scheduled_at}`);
+                console.log(`[AI FOLLOWUP] DEBUG - Current time (now): ${now}`);
+            }
+
             // Get pending AI follow-ups that are due
             const { data: aiFollowups, error: aiError } = await supabase
                 .from('ai_followup_schedule')

@@ -888,6 +888,42 @@ class FacebookService {
     }
 
     /**
+     * Manually set contact name when Facebook API cannot provide it
+     * Useful when user has privacy settings that prevent name fetching
+     */
+    async setContactName(conversationId, newName) {
+        console.log(`[SET_NAME] Setting contact name for ${conversationId} to: ${newName}`);
+
+        try {
+            if (!newName || !newName.trim()) {
+                throw new Error('Name cannot be empty');
+            }
+
+            const trimmedName = newName.trim();
+
+            // Update conversation with new name
+            const { error } = await getSupabase()
+                .from('facebook_conversations')
+                .update({
+                    participant_name: trimmedName,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('conversation_id', conversationId);
+
+            if (error) {
+                console.error('[SET_NAME] Database update error:', error);
+                throw error;
+            }
+
+            console.log(`[SET_NAME] Successfully set name to: ${trimmedName}`);
+            return trimmedName;
+        } catch (error) {
+            console.error('[SET_NAME] Error setting contact name:', error.message);
+            throw error;
+        }
+    }
+
+    /**
      * Subscribe to real-time message updates
      */
     subscribeToMessages(callback) {

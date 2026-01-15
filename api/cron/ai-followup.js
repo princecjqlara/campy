@@ -150,8 +150,27 @@ export default async function handler(req, res) {
         const results = {
             scanned: 0,
             scheduled: 0,
-            skipped: 0
+            skipped: 0,
+            cleanedUp: 0
         };
+
+        // CLEANUP: Cancel all stale pending follow-ups (scheduled > 6 hours ago but never processed)
+        // This clears out old stuck follow-ups from previous code versions
+        const staleCleanupThreshold = new Date(now.getTime() - (6 * 60 * 60 * 1000)); // 6 hours ago
+        const { data: staleFollowups, error: cleanupQueryError } = await db
+            .from('ai_followup_schedule')
+            .select('id')
+            .eq('status', 'pending')
+            .lt('scheduled_at', staleCleanupThreshold.toISOString());
+
+        if (!cleanupQueryError && staleFollowups && staleFollowups.length > 0) {
+            console.log(`[CRON] 🧹 Cleaning up ${staleFollowups.length} stale pending follow-ups`);
+            await db
+                .from('ai_followup_schedule')
+                .update({ status: 'cancelled', error_message: 'Auto-cancelled: overdue for more than 6 hours' })
+                .in('id', staleFollowups.map(f => f.id));
+            results.cleanedUp = staleFollowups.length;
+        }
 
         // Get AI chatbot config
         const { data: settings } = await db
@@ -204,16 +223,30 @@ export default async function handler(req, res) {
 
         for (const conv of conversations) {
             try {
-                // Quick check if there is already a pending follow-up - skip if so
-                const { count } = await db
+                // Check for existing pending follow-ups
+                const { data: existingFollowups } = await db
                     .from('ai_followup_schedule')
-                    .select('id', { count: 'exact', head: true })
+                    .select('id, scheduled_at')
                     .eq('conversation_id', conv.conversation_id)
                     .eq('status', 'pending');
 
-                if (count && count > 0) {
-                    results.skipped++;
-                    continue;
+                if (existingFollowups && existingFollowups.length > 0) {
+                    // Check if the pending follow-up is stale (scheduled for more than 2 hours ago but still pending)
+                    const staleThreshold = new Date(now.getTime() - (2 * 60 * 60 * 1000)); // 2 hours ago
+                    const staleFollowups = existingFollowups.filter(f => new Date(f.scheduled_at) < staleThreshold);
+
+                    if (staleFollowups.length > 0) {
+                        // Cancel stale follow-ups so we can create fresh ones
+                        console.log(`[CRON] Cancelling ${staleFollowups.length} stale follow-ups for ${conv.participant_name || conv.conversation_id}`);
+                        await db
+                            .from('ai_followup_schedule')
+                            .update({ status: 'cancelled', error_message: 'Cancelled - stale pending followup replaced' })
+                            .in('id', staleFollowups.map(f => f.id));
+                    } else {
+                        // There's a valid pending follow-up (scheduled_at is still in the future or recent past)
+                        results.skipped++;
+                        continue;
+                    }
                 }
 
                 // Calculate hours since last message
@@ -353,7 +386,7 @@ IMPORTANT: If we've already followed up 2-3 times with no response, give them MO
                     console.error(`[CRON] Error scheduling for ${conv.conversation_id}:`, insertError);
                     results.skipped++;
                 } else {
-                    console.log(`[CRON] ✅ Scheduled follow-up for ${conv.participant_name || conv.conversation_id} in ${analysis.wait_minutes} MINS`);
+                    console.log(`[CRON] ✅ Scheduled follow-up for ${conv.participant_name || conv.conversation_id} at ${scheduledAt.toISOString()} (in ${analysis.wait_minutes} mins from ${now.toISOString()})`);
                     results.scheduled++;
 
                     // Log the action with conversation summary
@@ -376,7 +409,7 @@ IMPORTANT: If we've already followed up 2-3 times with no response, give them MO
             }
         }
 
-        console.log(`[CRON] Completed: ${results.scheduled} scheduled, ${results.skipped} skipped`);
+        console.log(`[CRON] Completed: ${results.scheduled} scheduled, ${results.skipped} skipped, ${results.cleanedUp || 0} cleaned up`);
 
         return res.status(200).json({
             message: 'Silence detection complete',
