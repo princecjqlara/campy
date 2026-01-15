@@ -811,6 +811,27 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                             >
                                 {syncing ? '⏳' : '🔄'}
                             </button>
+                            <button
+                                className="btn btn-sm btn-secondary"
+                                onClick={async () => {
+                                    try {
+                                        const result = await facebookService.updateUnknownContactNames();
+                                        if (result.updated > 0) {
+                                            alert(`✅ Fixed ${result.updated} contact names!\n\nNames extracted from message content.`);
+                                            await loadConversations();
+                                        } else {
+                                            alert('No names could be extracted from messages.\n\nTip: Click "Set Name" on individual contacts to manually enter names.');
+                                        }
+                                    } catch (err) {
+                                        console.error('Error fixing names:', err);
+                                        alert('Error: ' + err.message);
+                                    }
+                                }}
+                                title="Fix unknown names by extracting from messages"
+                                style={{ minWidth: '32px', padding: '0.35rem 0.5rem' }}
+                            >
+                                👤
+                            </button>
                         </div>
                     </div>
 
