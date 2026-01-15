@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 
 /**
- * Process due scheduled messages
+ * Process due scheduled messages AND AI intuition follow-ups
  * This endpoint is called by cron-job.org or similar services
+ * Updated: 2026-01-15 11:30 - Fixed to always process AI follow-ups
  */
 export default async function handler(req, res) {
     // Allow both GET and POST for cron job compatibility
