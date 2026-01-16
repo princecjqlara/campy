@@ -760,6 +760,67 @@ class FacebookService {
     }
 
     /**
+     * Update lead status for a conversation
+     * @param {string} conversationId - Conversation ID
+     * @param {string} status - One of: 'intake', 'qualified', 'unqualified', 'appointment_booked', 'converted'
+     */
+    async updateLeadStatus(conversationId, status) {
+        const validStatuses = ['intake', 'qualified', 'unqualified', 'appointment_booked', 'converted'];
+        if (!validStatuses.includes(status)) {
+            throw new Error(`Invalid lead status: ${status}. Must be one of: ${validStatuses.join(', ')}`);
+        }
+
+        try {
+            const { data, error } = await getSupabase()
+                .from('facebook_conversations')
+                .update({
+                    lead_status: status,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('conversation_id', conversationId)
+                .select()
+                .single();
+
+            if (error) throw error;
+            console.log(`[LEAD_STATUS] Updated ${conversationId} to ${status}`);
+            return data;
+        } catch (error) {
+            console.error('Error updating lead status:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Bulk update lead status for multiple conversations
+     * @param {string[]} conversationIds - Array of conversation IDs
+     * @param {string} status - One of: 'intake', 'qualified', 'unqualified', 'appointment_booked', 'converted'
+     */
+    async bulkUpdateLeadStatus(conversationIds, status) {
+        const validStatuses = ['intake', 'qualified', 'unqualified', 'appointment_booked', 'converted'];
+        if (!validStatuses.includes(status)) {
+            throw new Error(`Invalid lead status: ${status}`);
+        }
+
+        try {
+            const { data, error } = await getSupabase()
+                .from('facebook_conversations')
+                .update({
+                    lead_status: status,
+                    updated_at: new Date().toISOString()
+                })
+                .in('conversation_id', conversationIds)
+                .select();
+
+            if (error) throw error;
+            console.log(`[LEAD_STATUS] Bulk updated ${conversationIds.length} conversations to ${status}`);
+            return data;
+        } catch (error) {
+            console.error('Error bulk updating lead status:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Mark messages as read
      */
     async markMessagesAsRead(conversationId) {

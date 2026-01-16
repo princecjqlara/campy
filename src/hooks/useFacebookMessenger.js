@@ -710,6 +710,54 @@ export function useFacebookMessenger() {
         }
     }, [loadConversations]);
 
+    // Update lead status for a conversation
+    const updateLeadStatus = useCallback(async (conversationId, status) => {
+        try {
+            const updatedConv = await facebookService.updateLeadStatus(conversationId, status);
+
+            // Update local state immediately for responsive UI
+            if (selectedConversation?.conversation_id === conversationId) {
+                setSelectedConversation(prev => ({
+                    ...prev,
+                    lead_status: status
+                }));
+            }
+
+            // Update conversations list
+            setConversations(prev => prev.map(conv =>
+                conv.conversation_id === conversationId
+                    ? { ...conv, lead_status: status }
+                    : conv
+            ));
+
+            return updatedConv;
+        } catch (err) {
+            console.error('Error updating lead status:', err);
+            setError(err.message);
+            return null;
+        }
+    }, [selectedConversation]);
+
+    // Bulk update lead status for multiple conversations
+    const bulkUpdateLeadStatus = useCallback(async (conversationIds, status) => {
+        try {
+            await facebookService.bulkUpdateLeadStatus(conversationIds, status);
+
+            // Update conversations list
+            setConversations(prev => prev.map(conv =>
+                conversationIds.includes(conv.conversation_id)
+                    ? { ...conv, lead_status: status }
+                    : conv
+            ));
+
+            return true;
+        } catch (err) {
+            console.error('Error bulk updating lead status:', err);
+            setError(err.message);
+            return false;
+        }
+    }, []);
+
     // Delete a conversation
     const deleteConversation = useCallback(async (conversationId) => {
         try {
@@ -988,6 +1036,8 @@ export function useFacebookMessenger() {
         refreshContactName,
         setContactName,
         assignToUser,
+        updateLeadStatus,
+        bulkUpdateLeadStatus,
         deleteConversation,
         loadSettings,
         saveSettings,

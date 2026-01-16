@@ -7,6 +7,15 @@ import AIChatbotSettings from './AIChatbotSettings';
 import BestTimesOverview from './BestTimesOverview';
 import { extractContactDetails, generateNotes } from '../services/aiConversationAnalyzer';
 
+// Lead status configuration
+const LEAD_STATUS_CONFIG = {
+    intake: { icon: '📥', label: 'Intake', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.15)' },
+    qualified: { icon: '✅', label: 'Qualified', color: '#22c55e', bgColor: 'rgba(34, 197, 94, 0.15)' },
+    unqualified: { icon: '❌', label: 'Unqualified', color: '#ef4444', bgColor: 'rgba(239, 68, 68, 0.15)' },
+    appointment_booked: { icon: '📅', label: 'Appointment Booked', color: '#a855f7', bgColor: 'rgba(168, 85, 247, 0.15)' },
+    converted: { icon: '🎉', label: 'Converted', color: '#f59e0b', bgColor: 'rgba(245, 158, 11, 0.15)' }
+};
+
 const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
     const {
         conversations,
@@ -55,7 +64,10 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
         searchConversations,
         conversationSearchResults,
         searchingConversations,
-        clearConversationSearch
+        clearConversationSearch,
+        // Lead status
+        updateLeadStatus,
+        bulkUpdateLeadStatus
     } = useFacebookMessenger();
 
     const [messageText, setMessageText] = useState('');
@@ -257,6 +269,17 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                     return conv.proposal_status === 'waiting';
                 case 'unread':
                     return conv.unread_count > 0;
+                // Lead status filters
+                case 'status_intake':
+                    return conv.lead_status === 'intake' || !conv.lead_status;
+                case 'status_qualified':
+                    return conv.lead_status === 'qualified';
+                case 'status_unqualified':
+                    return conv.lead_status === 'unqualified';
+                case 'status_appointment_booked':
+                    return conv.lead_status === 'appointment_booked';
+                case 'status_converted':
+                    return conv.lead_status === 'converted';
                 default:
                     return true;
             }
@@ -966,7 +989,22 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                         { value: 'in_pipeline', label: '✅ In Pipeline' },
                                         { value: 'proposal_sent', label: '📨 Proposal Sent' },
                                         { value: 'proposal_waiting', label: '⏰ Proposal Waiting' },
-                                    ].map(opt => (
+                                        { type: 'divider', label: '── Lead Status ──' },
+                                        { value: 'status_intake', label: '📥 Intake' },
+                                        { value: 'status_qualified', label: '✅ Qualified' },
+                                        { value: 'status_unqualified', label: '❌ Unqualified' },
+                                        { value: 'status_appointment_booked', label: '📅 Appointment Booked' },
+                                        { value: 'status_converted', label: '🎉 Converted' },
+                                    ].map(opt => opt.type === 'divider' ? (
+                                        <div key={opt.label} style={{
+                                            padding: '0.25rem 0.75rem',
+                                            fontSize: '0.65rem',
+                                            color: 'var(--text-muted)',
+                                            textAlign: 'center',
+                                            borderTop: '1px solid var(--border-color)',
+                                            marginTop: '0.25rem'
+                                        }}>{opt.label}</div>
+                                    ) : (
                                         <button
                                             key={opt.value}
                                             onClick={() => {
@@ -1107,8 +1145,24 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                             </div>
                                             {/* Details */}
                                             <div style={{ flex: 1, minWidth: 0 }}>
-                                                <div style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
-                                                    {conv.participant_name || 'Unknown'}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
+                                                        {conv.participant_name || 'Unknown'}
+                                                    </span>
+                                                    {/* Lead Status Badge */}
+                                                    {LEAD_STATUS_CONFIG[conv.lead_status || 'intake'] && (
+                                                        <span style={{
+                                                            fontSize: '0.6rem',
+                                                            padding: '0.1rem 0.35rem',
+                                                            borderRadius: '999px',
+                                                            background: LEAD_STATUS_CONFIG[conv.lead_status || 'intake'].bgColor,
+                                                            color: LEAD_STATUS_CONFIG[conv.lead_status || 'intake'].color,
+                                                            fontWeight: '500',
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            {LEAD_STATUS_CONFIG[conv.lead_status || 'intake'].icon}
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div style={{
                                                     fontSize: '0.75rem',
@@ -1224,6 +1278,20 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                                     }}>
                                                         {conv.participant_name || 'Unknown'}
                                                     </span>
+                                                    {/* Lead Status Badge */}
+                                                    {LEAD_STATUS_CONFIG[conv.lead_status || 'intake'] && (
+                                                        <span style={{
+                                                            fontSize: '0.55rem',
+                                                            padding: '0.1rem 0.3rem',
+                                                            borderRadius: '999px',
+                                                            background: LEAD_STATUS_CONFIG[conv.lead_status || 'intake'].bgColor,
+                                                            color: LEAD_STATUS_CONFIG[conv.lead_status || 'intake'].color,
+                                                            fontWeight: '500',
+                                                            whiteSpace: 'nowrap'
+                                                        }}>
+                                                            {LEAD_STATUS_CONFIG[conv.lead_status || 'intake'].icon}
+                                                        </span>
+                                                    )}
                                                     <span style={{
                                                         fontSize: '0.75rem',
                                                         color: 'var(--text-muted)',
@@ -1954,6 +2022,29 @@ const MessengerInbox = ({ clients = [], users = [], currentUserId }) => {
                                         {users.map(user => (
                                             <option key={user.id} value={user.id}>
                                                 {user.name || user.email}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Lead Status */}
+                                <div>
+                                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem' }}>
+                                        Lead Status
+                                    </label>
+                                    <select
+                                        className="form-select"
+                                        value={selectedConversation.lead_status || 'intake'}
+                                        onChange={(e) => updateLeadStatus(selectedConversation.conversation_id, e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            background: LEAD_STATUS_CONFIG[selectedConversation.lead_status || 'intake']?.bgColor || 'var(--bg-secondary)',
+                                            borderColor: LEAD_STATUS_CONFIG[selectedConversation.lead_status || 'intake']?.color || 'var(--border-color)'
+                                        }}
+                                    >
+                                        {Object.entries(LEAD_STATUS_CONFIG).map(([value, config]) => (
+                                            <option key={value} value={value}>
+                                                {config.icon} {config.label}
                                             </option>
                                         ))}
                                     </select>
