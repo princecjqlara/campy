@@ -275,7 +275,12 @@ async function handleIncomingMessage(pageId, event) {
     // Check if this is an echo (message sent FROM the page, not received)
     // Method 1: Facebook sets is_echo flag for echoed messages
     // Method 2: Sender ID matches page ID (for Business Suite messages)
-    const isEcho = message.is_echo === true || senderId === pageId;
+    const hasEchoFlag = message.is_echo === true;
+    const senderMatchesPage = String(senderId) === String(pageId);
+    const isEcho = hasEchoFlag || senderMatchesPage;
+
+    // DEBUG: Log all detection values
+    console.log(`[WEBHOOK] Echo Detection: hasEchoFlag=${hasEchoFlag}, senderId=${senderId}, pageId=${pageId}, senderMatchesPage=${senderMatchesPage}, FINAL_isEcho=${isEcho}`);
 
     // For echoes: sender is the page, recipient is the user
     // For regular messages: sender is the user, recipient is the page
@@ -283,7 +288,7 @@ async function handleIncomingMessage(pageId, event) {
     const isFromPage = isEcho;
 
     // Additional validation: participantId should not be the page
-    if (!participantId || participantId === pageId) {
+    if (!participantId || String(participantId) === String(pageId)) {
         console.log(`[WEBHOOK] Skipping - no valid participant (participantId=${participantId}, pageId=${pageId})`);
         return;
     }
@@ -464,6 +469,7 @@ async function handleIncomingMessage(pageId, event) {
 
         // Use UPSERT with conversation_id as conflict key (has UNIQUE constraint)
         console.log(`[WEBHOOK] UPSERTING conversation ${conversationId} for participant ${participantId}`);
+        console.log(`[WEBHOOK] Save values: isFromPage=${isFromPage}, unread_count=${newUnreadCount}, name=${participantName || 'null'}`);
         const { error, data } = await db
             .from('facebook_conversations')
             .upsert(conversationData, {
