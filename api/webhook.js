@@ -1255,24 +1255,31 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
 
                         // Create calendar event
                         try {
-                            const { error: calError } = await db
+                            const calendarData = {
+                                title: `📅 Booking: ${customerName}`,
+                                description: `Booked via AI chatbot (auto-detected)\nPhone: ${phone || 'Not provided'}\nConversation: ${conversationId}`,
+                                start_time: bookingDate.toISOString(),
+                                end_time: new Date(bookingDate.getTime() + 60 * 60 * 1000).toISOString(),
+                                event_type: 'meeting',
+                                status: 'scheduled'
+                            };
+                            console.log('[WEBHOOK] FALLBACK: Inserting calendar event:', JSON.stringify(calendarData));
+
+                            const { data: calData, error: calError } = await db
                                 .from('calendar_events')
-                                .insert({
-                                    title: `📅 Booking: ${customerName}`,
-                                    description: `Booked via AI chatbot (auto-detected)\nPhone: ${phone || 'Not provided'}\nConversation: ${conversationId}`,
-                                    start_time: bookingDate.toISOString(),
-                                    end_time: new Date(bookingDate.getTime() + 60 * 60 * 1000).toISOString(),
-                                    event_type: 'meeting',
-                                    status: 'scheduled'
-                                });
+                                .insert(calendarData)
+                                .select();
 
                             if (calError) {
-                                console.error('[WEBHOOK] FALLBACK: Calendar error:', calError.message);
+                                console.error('[WEBHOOK] FALLBACK: Calendar error code:', calError.code);
+                                console.error('[WEBHOOK] FALLBACK: Calendar error msg:', calError.message);
+                                console.error('[WEBHOOK] FALLBACK: Calendar error details:', calError.details);
+                                console.error('[WEBHOOK] FALLBACK: Calendar error hint:', calError.hint);
                             } else {
-                                console.log('[WEBHOOK] FALLBACK: ✅ Calendar event created!');
+                                console.log('[WEBHOOK] FALLBACK: ✅ Calendar event created!', calData?.[0]?.id);
                             }
                         } catch (e) {
-                            console.log('[WEBHOOK] FALLBACK: Calendar insert failed:', e.message);
+                            console.error('[WEBHOOK] FALLBACK: Calendar insert exception:', e.message, e.stack);
                         }
 
                         // Cancel pending follow-ups
