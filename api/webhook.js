@@ -1274,6 +1274,9 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
                 // Pattern 2: Look for natural date (January 19, 2026 at 2:00 PM) - flexible pattern
                 const naturalDateMatch = aiReply.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})?\s*(?:at\s*)?(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
 
+                // Pattern 3: Look for RELATIVE dates like "tomorrow at 9am", "tomorrow at 9:00 AM"
+                const relativeMatch = aiReply.match(/(?:scheduled|booked|confirmed|meeting).*?(tomorrow|today|day after tomorrow)(?:\s+at)?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+
                 let detectedDate = null;
                 let detectedTime = null;
 
@@ -1301,6 +1304,42 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
                     detectedDate = `${year}-${month}-${day}`;
                     detectedTime = `${String(hour).padStart(2, '0')}:${minute}`;
                     console.log(`[WEBHOOK] FALLBACK: Detected natural date booking: ${detectedDate} ${detectedTime}`);
+                } else if (relativeMatch) {
+                    // Handle relative dates: tomorrow, today, day after tomorrow
+                    console.log('[WEBHOOK] FALLBACK: Relative date match found:', JSON.stringify(relativeMatch.slice(0, 5)));
+                    const relativeDay = relativeMatch[1].toLowerCase();
+                    let hour = parseInt(relativeMatch[2]);
+                    const minute = relativeMatch[3] || '00';
+                    const ampm = relativeMatch[4]?.toLowerCase();
+
+                    // Convert to 24-hour format
+                    if (ampm === 'pm' && hour < 12) {
+                        hour += 12;
+                    } else if (ampm === 'am' && hour === 12) {
+                        hour = 0;
+                    } else if (!ampm && hour <= 6) {
+                        // If no AM/PM specified and hour is 1-6, assume PM (business hours)
+                        hour += 12;
+                    }
+
+                    // Calculate the date
+                    const now = new Date();
+                    let targetDate = new Date(now);
+
+                    if (relativeDay === 'tomorrow') {
+                        targetDate.setDate(now.getDate() + 1);
+                    } else if (relativeDay === 'day after tomorrow') {
+                        targetDate.setDate(now.getDate() + 2);
+                    }
+                    // 'today' stays as current date
+
+                    const year = targetDate.getFullYear();
+                    const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+                    const day = String(targetDate.getDate()).padStart(2, '0');
+
+                    detectedDate = `${year}-${month}-${day}`;
+                    detectedTime = `${String(hour).padStart(2, '0')}:${minute}`;
+                    console.log(`[WEBHOOK] FALLBACK: Detected RELATIVE date booking: "${relativeDay}" -> ${detectedDate} ${detectedTime}`);
                 }
 
                 if (detectedDate && detectedTime) {
