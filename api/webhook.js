@@ -1118,7 +1118,10 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
                                     start_time: bookingDate.toISOString(),
                                     end_time: new Date(bookingDate.getTime() + 60 * 60 * 1000).toISOString(), // 1 hour
                                     event_type: 'meeting',
-                                    status: 'scheduled'
+                                    status: 'scheduled',
+                                    // For automated reminders
+                                    conversation_id: conversationId,
+                                    contact_psid: conversation?.participant_id || null
                                 });
 
                             if (calError) {
@@ -1331,7 +1334,10 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
                                 start_time: bookingDate.toISOString(),
                                 end_time: new Date(bookingDate.getTime() + 60 * 60 * 1000).toISOString(),
                                 event_type: 'meeting',
-                                status: 'scheduled'
+                                status: 'scheduled',
+                                // For automated reminders
+                                conversation_id: conversationId,
+                                contact_psid: conversation?.participant_id || null
                             };
                             console.log('[WEBHOOK] FALLBACK: Inserting calendar event:', JSON.stringify(calendarData));
 

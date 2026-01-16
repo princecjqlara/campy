@@ -156,11 +156,141 @@ export default async function handler(req, res) {
             }
         }
 
-        console.log(`Follow-up cron complete. Sent ${sentCount} messages.`);
+        // =============================================
+        // PART 2: Process Calendar Events (AI bookings)
+        // =============================================
+        console.log('Checking calendar events for reminders...');
+
+        const { data: calendarEvents, error: calError } = await supabase
+            .from('calendar_events')
+            .select('*, facebook_conversations!conversation_id(participant_id, page_id)')
+            .eq('status', 'scheduled')
+            .gte('start_time', now.toISOString())
+            .lte('start_time', in24Hours.toISOString());
+
+        if (calError && calError.code !== '42P01') {
+            console.error('Calendar events query error:', calError);
+        }
+
+        console.log(`Found ${calendarEvents?.length || 0} calendar events to check`);
+
+        for (const event of (calendarEvents || [])) {
+            const eventTime = new Date(event.start_time);
+            const hoursUntil = (eventTime - now) / (1000 * 60 * 60);
+
+            let reminderType = null;
+
+            // Determine which reminder to send
+            if (!event.reminder_24h_sent && hoursUntil <= 24 && hoursUntil > 2) {
+                reminderType = '24h';
+            } else if (!event.reminder_1h_sent && hoursUntil <= 2 && hoursUntil > 0.25) {
+                reminderType = '1h';
+            }
+
+            if (!reminderType) continue;
+
+            // Get conversation info for sending message
+            const participantId = event.contact_psid || event.facebook_conversations?.participant_id;
+            const pageId = event.facebook_conversations?.page_id;
+
+            if (!participantId || !pageId) {
+                console.log(`Event ${event.id}: Missing contact info, skipping reminder`);
+                continue;
+            }
+
+            // Get page access token
+            const { data: page } = await supabase
+                .from('facebook_pages')
+                .select('page_access_token')
+                .eq('page_id', pageId)
+                .single();
+
+            if (!page?.page_access_token) {
+                console.log(`Event ${event.id}: No token for page ${pageId}`);
+                continue;
+            }
+
+            // Format message
+            const formattedDate = eventTime.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric'
+            });
+            const hour = eventTime.getHours();
+            const minute = String(eventTime.getMinutes()).padStart(2, '0');
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            const hour12 = hour % 12 || 12;
+            const formattedTime = `${hour12}:${minute} ${ampm}`;
+
+            // Extract customer name from event title if available
+            const customerName = event.title?.replace('Booking: ', '') || 'there';
+
+            const message = reminderType === '24h'
+                ? `📅 Reminder: Your appointment is tomorrow!\n\n🗓 ${formattedDate}\n🕐 ${formattedTime}\n\nWe look forward to seeing you, ${customerName}! Reply if you need to reschedule.`
+                : `⏰ Your appointment is coming up in about 1 hour!\n\n🗓 ${formattedDate}\n🕐 ${formattedTime}\n\nSee you very soon, ${customerName}!`;
+
+            // Send via Messenger
+            try {
+                const msgResponse = await fetch(
+                    `${GRAPH_API_BASE}/${pageId}/messages?access_token=${page.page_access_token}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            recipient: { id: participantId },
+                            message: { text: message },
+                            messaging_type: 'MESSAGE_TAG',
+                            tag: 'CONFIRMED_EVENT_UPDATE'
+                        })
+                    }
+                );
+
+                if (msgResponse.ok) {
+                    // Mark reminder as sent
+                    const updateField = reminderType === '24h'
+                        ? { reminder_24h_sent: true }
+                        : { reminder_1h_sent: true };
+
+                    await supabase
+                        .from('calendar_events')
+                        .update({ ...updateField, updated_at: new Date().toISOString() })
+                        .eq('id', event.id);
+
+                    sentCount++;
+                    results.push({
+                        eventId: event.id,
+                        type: `calendar_${reminderType}`,
+                        status: 'sent',
+                        customer: customerName
+                    });
+                    console.log(`✅ Sent ${reminderType} reminder for event ${event.id} to ${customerName}`);
+                } else {
+                    const err = await msgResponse.json();
+                    console.error(`Failed to send reminder for event ${event.id}:`, err);
+                    results.push({
+                        eventId: event.id,
+                        type: `calendar_${reminderType}`,
+                        status: 'failed',
+                        error: err.error?.message
+                    });
+                }
+            } catch (msgError) {
+                console.error(`Error sending reminder for event ${event.id}:`, msgError);
+                results.push({
+                    eventId: event.id,
+                    type: `calendar_${reminderType}`,
+                    status: 'error',
+                    error: msgError.message
+                });
+            }
+        }
+
+        console.log(`Follow-up cron complete. Sent ${sentCount} messages total.`);
 
         return res.status(200).json({
             success: true,
-            checked: bookings?.length || 0,
+            bookingsChecked: bookings?.length || 0,
+            calendarEventsChecked: calendarEvents?.length || 0,
             sent: sentCount,
             results
         });
