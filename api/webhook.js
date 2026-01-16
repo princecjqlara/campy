@@ -56,18 +56,17 @@ async function fetchFacebookUserName(userId, pageId) {
         console.log(`[WEBHOOK] Facebook API response status: ${response.status}`);
 
         if (!response.ok) {
-            console.error('[WEBHOOK] Facebook API error response:', responseText);
+            // Silently handle common privacy/permission errors - don't spam logs
             try {
                 const errorData = JSON.parse(responseText);
                 if (errorData.error?.code === 100) {
-                    console.log('[WEBHOOK] User profile not accessible - Facebook privacy/permission restriction');
+                    // Privacy restriction - common, don't log as error
+                    return null;
                 } else if (errorData.error?.code === 190) {
-                    console.error('[WEBHOOK] Page access token may be expired or invalid');
-                } else {
-                    console.error('[WEBHOOK] Facebook error:', errorData.error?.message);
+                    console.error('[WEBHOOK] Page access token may be expired');
                 }
             } catch (e) {
-                console.error('[WEBHOOK] Could not parse error response');
+                // Ignore parse errors
             }
             return null;
         }
@@ -184,7 +183,11 @@ export default async function handler(req, res) {
         if (req.method === 'POST') {
             const body = req.body;
 
-            console.log('[WEBHOOK] POST received:', JSON.stringify(body, null, 2));
+            // Only log actual message events, not delivery/read receipts
+            const hasMessageEvent = body.entry?.some(e => e.messaging?.some(m => m.message));
+            if (hasMessageEvent) {
+                console.log('[WEBHOOK] Message received');
+            }
 
             if (body.object === 'page') {
                 for (const entry of body.entry || []) {
@@ -192,12 +195,12 @@ export default async function handler(req, res) {
                     const messaging = entry.messaging || [];
 
                     for (const event of messaging) {
+                        // Only process actual messages, ignore delivery/read receipts
                         if (event.message) {
                             await handleIncomingMessage(pageId, event);
                         }
-                        if (event.postback) {
-                            console.log('[WEBHOOK] Postback:', event.postback);
-                        }
+                        // Silently ignore delivery receipts, read receipts, typing indicators
+                        // These are: event.delivery, event.read, event.typing
                     }
                 }
 
@@ -224,8 +227,7 @@ async function handleIncomingMessage(pageId, event) {
     const timestamp = event.timestamp;
 
     if (!senderId || !message) {
-        console.log('[WEBHOOK] Missing sender or message');
-        return;
+        return; // Silent return for invalid events
     }
 
     // Check if this is an echo (message sent FROM the page, not received)
@@ -236,13 +238,26 @@ async function handleIncomingMessage(pageId, event) {
     const participantId = isEcho ? recipientId : senderId;
     const isFromPage = isEcho;
 
-    console.log(`[WEBHOOK] ${isEcho ? 'Echo' : 'Incoming'} from ${participantId}: ${message.text || '[attachment]'}`);
-
     const db = getSupabase();
     if (!db) {
-        console.error('[WEBHOOK] Database not available - message will not be saved');
         return;
     }
+
+    // DEDUPLICATION: Check if we already processed this message
+    if (message.mid) {
+        const { data: existingMessage } = await db
+            .from('facebook_messages')
+            .select('message_id')
+            .eq('message_id', message.mid)
+            .single();
+
+        if (existingMessage) {
+            // Already processed this message, skip
+            return;
+        }
+    }
+
+    console.log(`[WEBHOOK] ${isEcho ? 'Echo' : 'Incoming'} from ${participantId}: ${(message.text || '[attachment]').substring(0, 50)}`);
 
     try {
         // CRITICAL: Ensure the page exists in facebook_pages before inserting conversation
