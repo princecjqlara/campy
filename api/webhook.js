@@ -1024,8 +1024,12 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
         console.log('[WEBHOOK] AI Reply length:', aiReply.length);
         console.log('[WEBHOOK] Contains ||| delimiter:', aiReply.includes('|||'));
 
+        // Flag to track if booking was already handled (prevent duplicates)
+        let bookingHandled = false;
+
         // Detect BOOKING_CONFIRMED and create calendar event
         if (aiReply.includes('BOOKING_CONFIRMED:')) {
+            bookingHandled = true; // Mark as handled to prevent FALLBACK from creating duplicate
             try {
                 const bookingMatch = aiReply.match(/BOOKING_CONFIRMED:\s*(.+)/i);
                 if (bookingMatch) {
@@ -1199,7 +1203,8 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
         // Look for patterns like "scheduled for 2026-01-17 18:00" or "booked for January 17"
         console.log('[WEBHOOK] FALLBACK CHECK: aiReply contains BOOKING_CONFIRMED?', aiReply.includes('BOOKING_CONFIRMED:'));
         console.log('[WEBHOOK] FALLBACK CHECK: aiReply preview:', aiReply.substring(0, 150));
-        if (!aiReply.includes('BOOKING_CONFIRMED:')) {
+        console.log('[WEBHOOK] FALLBACK CHECK: bookingHandled=', bookingHandled);
+        if (!bookingHandled && !aiReply.includes('BOOKING_CONFIRMED:')) {
             console.log('[WEBHOOK] FALLBACK: Entering fallback detection...');
             try {
                 // Pattern 1: Look for ISO date format (2026-01-17 18:00)
