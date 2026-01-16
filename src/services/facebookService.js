@@ -277,6 +277,44 @@ class FacebookService {
 
                 console.log(`[SYNC] Conv ${conv.id}: from=${fromId}, pageId=${pageId}, isFromPage=${isFromPage}, name=${finalName}`);
 
+                // Fetch custom labels for this participant from Facebook
+                let leadStatus = null;
+                if (participant?.id) {
+                    try {
+                        const labelsUrl = `${GRAPH_API_BASE}/${participant.id}/custom_labels?fields=page_label_name&access_token=${accessToken}`;
+                        const labelsResponse = await fetch(labelsUrl);
+                        if (labelsResponse.ok) {
+                            const labelsData = await labelsResponse.json();
+                            const labels = labelsData.data || [];
+                            console.log(`[SYNC] Labels for ${participant.id}:`, labels.map(l => l.page_label_name));
+
+                            // Map Facebook labels to our lead_status
+                            // Check for common labels (case-insensitive)
+                            for (const label of labels) {
+                                const labelName = (label.page_label_name || label.name || '').toLowerCase();
+                                if (labelName.includes('qualified') && !labelName.includes('unqualified')) {
+                                    leadStatus = 'qualified';
+                                    break;
+                                } else if (labelName.includes('unqualified') || labelName.includes('not qualified')) {
+                                    leadStatus = 'unqualified';
+                                    break;
+                                } else if (labelName.includes('convert') || labelName.includes('client') || labelName.includes('won')) {
+                                    leadStatus = 'converted';
+                                    break;
+                                } else if (labelName.includes('book') || labelName.includes('appointment') || labelName.includes('meeting')) {
+                                    leadStatus = 'appointment_booked';
+                                    break;
+                                }
+                            }
+                            if (leadStatus) {
+                                console.log(`[SYNC] Mapped label to lead_status: ${leadStatus}`);
+                            }
+                        }
+                    } catch (labelErr) {
+                        console.log(`[SYNC] Could not fetch labels (non-fatal):`, labelErr.message);
+                    }
+                }
+
                 const conversationData = {
                     page_id: pageId,
                     conversation_id: conv.id,
@@ -289,6 +327,11 @@ class FacebookService {
                     unread_count: conv.unread_count || 0,
                     updated_at: new Date().toISOString()
                 };
+
+                // Only update lead_status if we got one from Facebook (don't overwrite manual changes)
+                if (leadStatus) {
+                    conversationData.lead_status = leadStatus;
+                }
 
                 const { data, error } = await getSupabase()
                     .from('facebook_conversations')

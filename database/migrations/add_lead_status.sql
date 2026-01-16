@@ -1,11 +1,6 @@
 -- Add Lead Status to Facebook Conversations
 -- Run this in Supabase SQL Editor
 
--- ============================================
--- ADD LEAD STATUS COLUMN
--- Tracks lead qualification status in Lead Center
--- ============================================
-
 -- Add lead_status column with default 'intake'
 ALTER TABLE facebook_conversations 
 ADD COLUMN IF NOT EXISTS lead_status TEXT DEFAULT 'intake';
