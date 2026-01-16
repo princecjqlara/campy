@@ -1442,7 +1442,7 @@ AGGRESSIVE FOLLOW-UP GUIDELINES (use minutes, not hours):
         if (scheduleError) {
             console.error('[WEBHOOK] Failed to schedule follow-up:', scheduleError.message);
         } else {
-            console.log(`[WEBHOOK] ✅ Intelligent follow-up scheduled for ${scheduledAt.toLocaleString()} (${waitHours}h)`);
+            console.log(`[WEBHOOK] ✅ Intelligent follow-up scheduled for ${scheduledAt.toLocaleString()} (${waitMinutes} mins)`);
         }
 
     } catch (err) {
