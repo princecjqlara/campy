@@ -17,6 +17,37 @@ function getSupabase() {
 }
 
 /**
+ * Extract name from message text using common patterns
+ * Examples: "I'm John", "My name is Maria", "This is Pedro here"
+ */
+function extractNameFromText(text) {
+    if (!text || text.length < 3) return null;
+
+    const patterns = [
+        /(?:i'?m|im|i am)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+        /(?:my name is|my name's|name is|name's)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+        /(?:this is|it's|its)\s+([A-Z][a-z]+)(?:\s+here|\s+speaking)?/i,
+        /(?:hey|hi|hello),?\s+(?:this is\s+)?([A-Z][a-z]+)\s+here/i,
+        /^([A-Z][a-z]+)\s+here[.!]?$/i,
+        /(?:call me|you can call me)\s+([A-Z][a-z]+)/i,
+        /(?:ako si|ako po si|si)\s+([A-Z][a-z]+)/i, // Filipino: "Ako si [Name]"
+    ];
+
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match && match[1]) {
+            const name = match[1].trim();
+            // Validate: 2-25 chars, letters/spaces only, no common words
+            const invalidNames = ['interested', 'here', 'yes', 'no', 'ok', 'okay', 'thanks', 'thank', 'hello', 'hi', 'hey'];
+            if (name.length >= 2 && name.length <= 25 && /^[A-Za-z\s]+$/.test(name) && !invalidNames.includes(name.toLowerCase())) {
+                return name;
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * Fetch Facebook user profile name using Graph API
  * Note: Facebook restricts profile access - the user must have messaged the page
  * and your app needs appropriate permissions (pages_messaging)
@@ -341,6 +372,43 @@ async function handleIncomingMessage(pageId, event) {
             if (!participantName) {
                 console.log(`[WEBHOOK] Fetching name from API for participant: ${participantId}`);
                 participantName = await fetchFacebookUserName(participantId, pageId);
+            }
+
+            // Source 3: Try to extract name from message content using patterns
+            if (!participantName) {
+                // Check current message first
+                const currentMsgText = message.text || '';
+                const extractedFromCurrent = extractNameFromText(currentMsgText);
+                if (extractedFromCurrent) {
+                    console.log(`[WEBHOOK] Extracted name from current message: ${extractedFromCurrent}`);
+                    participantName = extractedFromCurrent;
+                }
+
+                // If still no name, check existing messages from this conversation
+                if (!participantName && conversationId) {
+                    try {
+                        const { data: existingMsgs } = await db
+                            .from('facebook_messages')
+                            .select('message_text, is_from_page')
+                            .eq('conversation_id', conversationId)
+                            .eq('is_from_page', false)
+                            .order('timestamp', { ascending: true })
+                            .limit(10);
+
+                        if (existingMsgs) {
+                            for (const msg of existingMsgs) {
+                                const extracted = extractNameFromText(msg.message_text || '');
+                                if (extracted) {
+                                    console.log(`[WEBHOOK] Extracted name from history: ${extracted}`);
+                                    participantName = extracted;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.log('[WEBHOOK] Could not check message history for name');
+                    }
+                }
             }
 
             if (participantName) {
