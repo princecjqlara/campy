@@ -1197,6 +1197,104 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
             }
         }
 
+        // FALLBACK: Detect booking confirmations from natural language (if AI forgot the marker)
+        // Look for patterns like "scheduled for 2026-01-17 18:00" or "booked for January 17"
+        if (!aiReply.includes('BOOKING_CONFIRMED:')) {
+            try {
+                // Pattern 1: Look for ISO date format (2026-01-17 18:00)
+                const isoDateMatch = aiReply.match(/(?:scheduled|booked|confirmed).*?for\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/i);
+
+                // Pattern 2: Look for natural date (January 17, 2026 at 6:00 PM)
+                const naturalDateMatch = aiReply.match(/(?:scheduled|booked|confirmed).*?for\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:,?\s*(\d{4}))?\s+(?:at\s+)?(\d{1,2}:\d{2}\s*(?:AM|PM)?)/i);
+
+                let detectedDate = null;
+                let detectedTime = null;
+
+                if (isoDateMatch) {
+                    detectedDate = isoDateMatch[1]; // 2026-01-17
+                    detectedTime = isoDateMatch[2]; // 18:00
+                    console.log(`[WEBHOOK] FALLBACK: Detected ISO date booking: ${detectedDate} ${detectedTime}`);
+                } else if (naturalDateMatch) {
+                    const monthNames = { january: '01', february: '02', march: '03', april: '04', may: '05', june: '06', july: '07', august: '08', september: '09', october: '10', november: '11', december: '12' };
+                    const month = monthNames[naturalDateMatch[1].toLowerCase()];
+                    const day = naturalDateMatch[2].padStart(2, '0');
+                    const year = naturalDateMatch[3] || new Date().getFullYear();
+                    let time = naturalDateMatch[4];
+
+                    // Convert to 24-hour format
+                    if (time.toLowerCase().includes('pm') && !time.startsWith('12')) {
+                        const [h, m] = time.replace(/\s*(AM|PM)/i, '').split(':');
+                        time = `${parseInt(h) + 12}:${m}`;
+                    } else {
+                        time = time.replace(/\s*(AM|PM)/i, '');
+                    }
+
+                    detectedDate = `${year}-${month}-${day}`;
+                    detectedTime = time;
+                    console.log(`[WEBHOOK] FALLBACK: Detected natural date booking: ${detectedDate} ${detectedTime}`);
+                }
+
+                if (detectedDate && detectedTime) {
+                    const bookingDate = new Date(`${detectedDate}T${detectedTime}`);
+
+                    if (!isNaN(bookingDate.getTime())) {
+                        console.log('[WEBHOOK] FALLBACK: Creating calendar event from natural language');
+
+                        // Get customer name from conversation
+                        const customerName = conversation?.participant_name || 'Customer';
+
+                        // Try to extract phone from conversation (look in last few messages)
+                        let phone = '';
+                        const phoneMatch = message.text?.match(/0\d{10}/) || message.text?.match(/\+63\d{10}/);
+                        if (phoneMatch) phone = phoneMatch[0];
+
+                        // Create calendar event
+                        try {
+                            const { error: calError } = await db
+                                .from('calendar_events')
+                                .insert({
+                                    title: `📅 Booking: ${customerName}`,
+                                    description: `Booked via AI chatbot (auto-detected)\nPhone: ${phone || 'Not provided'}\nConversation: ${conversationId}`,
+                                    start_time: bookingDate.toISOString(),
+                                    end_time: new Date(bookingDate.getTime() + 60 * 60 * 1000).toISOString(),
+                                    event_type: 'meeting',
+                                    status: 'scheduled'
+                                });
+
+                            if (calError) {
+                                console.error('[WEBHOOK] FALLBACK: Calendar error:', calError.message);
+                            } else {
+                                console.log('[WEBHOOK] FALLBACK: ✅ Calendar event created!');
+                            }
+                        } catch (e) {
+                            console.log('[WEBHOOK] FALLBACK: Calendar insert failed:', e.message);
+                        }
+
+                        // Cancel pending follow-ups
+                        try {
+                            await db
+                                .from('ai_followup_schedule')
+                                .update({ status: 'cancelled', error_message: 'Contact booked (auto-detected)' })
+                                .eq('conversation_id', conversationId)
+                                .eq('status', 'pending');
+                            console.log('[WEBHOOK] FALLBACK: Cancelled pending follow-ups');
+                        } catch (e) { }
+
+                        // Update conversation
+                        try {
+                            await db
+                                .from('facebook_conversations')
+                                .update({ pipeline_stage: 'booked', booking_date: bookingDate.toISOString() })
+                                .eq('conversation_id', conversationId);
+                            console.log('[WEBHOOK] FALLBACK: ✅ Updated conversation to booked');
+                        } catch (e) { }
+                    }
+                }
+            } catch (fallbackErr) {
+                console.log('[WEBHOOK] FALLBACK: Detection error (non-fatal):', fallbackErr.message);
+            }
+        }
+
         // Split messages - AI uses |||, but if not, force split by sentences
         let messageParts = [];
 
