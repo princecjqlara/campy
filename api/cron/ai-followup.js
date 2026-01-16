@@ -18,6 +18,82 @@ function getSupabase() {
     return supabase;
 }
 
+/**
+ * Calculate best time to contact based on engagement data
+ * Returns optimal day/hour when customer typically responds
+ */
+async function calculateBestTimeToContact(db, conversationId, pageId) {
+    try {
+        // Get engagement history for this contact
+        const { data: engagements } = await db
+            .from('contact_engagement')
+            .select('day_of_week, hour_of_day, response_latency_seconds')
+            .eq('conversation_id', conversationId)
+            .eq('message_direction', 'inbound')
+            .order('message_timestamp', { ascending: false })
+            .limit(30);
+
+        let bestSlots = [];
+
+        if (engagements && engagements.length >= 3) {
+            // Calculate scores for each day/hour
+            const timeScores = {};
+            for (const eng of engagements) {
+                const key = `${eng.day_of_week}-${eng.hour_of_day}`;
+                if (!timeScores[key]) {
+                    timeScores[key] = { day: eng.day_of_week, hour: eng.hour_of_day, count: 0, latency: 0 };
+                }
+                timeScores[key].count++;
+                timeScores[key].latency += eng.response_latency_seconds || 0;
+            }
+
+            // Rank by frequency and low latency
+            bestSlots = Object.values(timeScores)
+                .map(s => ({
+                    ...s,
+                    score: s.count * (1 - Math.min(s.latency / s.count / 7200, 0.8))
+                }))
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 3);
+        }
+
+        // If not enough data, use defaults (business hours)
+        if (bestSlots.length === 0) {
+            const now = new Date();
+            const hash = conversationId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+            bestSlots = [
+                { day: 1 + (hash % 5), hour: 9 + ((hash >> 4) % 7) },
+                { day: 1 + ((hash + 2) % 5), hour: 10 + ((hash >> 2) % 6) }
+            ];
+        }
+
+        // Find next occurrence of best time
+        const now = new Date();
+        const best = bestSlots[0];
+        let nextTime = new Date(now);
+        nextTime.setHours(best.hour, 0, 0, 0);
+
+        let daysUntil = best.day - now.getDay();
+        if (daysUntil < 0 || (daysUntil === 0 && now.getHours() >= best.hour)) {
+            daysUntil += 7;
+        }
+        nextTime.setDate(nextTime.getDate() + daysUntil);
+
+        return {
+            bestSlots,
+            nextBestTime: nextTime,
+            hasData: engagements && engagements.length >= 3
+        };
+    } catch (err) {
+        console.log('[CRON] Best time calc error:', err.message);
+        // Return default
+        const now = new Date();
+        const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        tomorrow.setHours(10, 0, 0, 0);
+        return { bestSlots: [], nextBestTime: tomorrow, hasData: false };
+    }
+}
+
 export default async function handler(req, res) {
     // Track start time for timeout protection
     const startTime = Date.now();
@@ -192,30 +268,34 @@ export default async function handler(req, res) {
                     waitMinutes = 240; // 4 hours
                     reason = `${hoursSince}h silent - gentle check-in`;
                     aggressiveness = 'mild';
-                } else if (hoursSince < 72) {
-                    // LIGHT: Been a day or more, less frequent
-                    waitMinutes = 480; // 8 hours
-                    reason = `${daysSince} day(s) silent - light touch`;
-                    aggressiveness = 'light';
                 } else {
-                    // MINIMAL: Long time no reply, daily at most
-                    waitMinutes = 1440; // 24 hours (daily)
-                    reason = `${daysSince} days silent - daily check-in`;
-                    aggressiveness = 'minimal';
+                    // 24h+ SILENCE: Use BEST TIME TO CONTACT calculation!
+                    const bestTime = await calculateBestTimeToContact(db, conv.conversation_id, conv.page_id);
+                    const msTilBest = bestTime.nextBestTime.getTime() - now.getTime();
+                    waitMinutes = Math.max(30, Math.floor(msTilBest / (1000 * 60))); // At least 30 mins
+
+                    if (bestTime.hasData) {
+                        reason = `${daysSince} day(s) silent - scheduling for best time (based on engagement data)`;
+                    } else {
+                        reason = `${daysSince} day(s) silent - scheduling for default business hours`;
+                    }
+                    aggressiveness = 'best_time';
                 }
 
                 // Calculate scheduled time
                 const waitMs = waitMinutes * 60 * 1000;
                 const scheduledAt = new Date(now.getTime() + waitMs);
 
-                // Create follow-up
+                // Create follow-up with correct type
+                const followUpType = aggressiveness === 'best_time' ? 'best_time' : 'intuition';
+
                 const { error: insertError } = await db
                     .from('ai_followup_schedule')
                     .insert({
                         conversation_id: conv.conversation_id,
                         page_id: conv.page_id,
                         scheduled_at: scheduledAt.toISOString(),
-                        follow_up_type: 'best_time',
+                        follow_up_type: followUpType,
                         reason: reason,
                         status: 'pending'
                     });
