@@ -83,7 +83,7 @@ export default async function handler(req, res) {
         }
 
         const silenceHours = config.intuition_silence_hours || 4;
-        const maxPerRun = 10; // Small batch size to prevent timeout
+        const maxPerRun = 50; // Increased batch size to process more users per run
 
         // Calculate cutoff time (conversations inactive for X hours)
         const cutoffTime = new Date(now.getTime() - (silenceHours * 60 * 60 * 1000));
@@ -108,9 +108,10 @@ export default async function handler(req, res) {
             `)
             .neq('ai_enabled', false) // Include null (default enabled) and true
             .neq('human_takeover', true) // Include null and false
-            .eq('last_message_from_page', true) // Only follow up when WE sent the last message
+            // Follow up any conversation that's been inactive for the silence period
+            // We don't filter by last_message_from_page because we want to re-engage ALL inactive contacts
             .lt('last_message_time', cutoffTime.toISOString())
-            .order('last_message_time', { ascending: false })
+            .order('last_message_time', { ascending: true }) // Oldest first (most in need of follow-up)
             .limit(maxPerRun);
 
         if (error) {
