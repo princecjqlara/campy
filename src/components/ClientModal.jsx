@@ -1039,40 +1039,60 @@ const ClientModal = ({ clientId, client, onClose, onSave, onDelete }) => {
                       }
 
                       try {
+                        // Build description with client details
+                        const description = `📅 Meeting with ${formData.clientName || 'Client'}
+👤 Business: ${formData.businessName || 'N/A'}
+📞 Contact: ${formData.contactDetails || 'N/A'}
+⏱️ Duration: ${duration} minutes`;
+
                         // Create calendar event
                         const { data: eventData, error: eventError } = await supabase
                           .from('calendar_events')
                           .insert({
                             title: title,
+                            description: description,
                             start_time: startTime.toISOString(),
                             end_time: endTime.toISOString(),
-                            client_id: clientId,
-                            event_type: 'meeting'
+                            client_id: clientId || null,
+                            event_type: 'meeting',
+                            all_day: false
                           })
                           .select()
                           .single();
 
-                        if (eventError) throw eventError;
+                        if (eventError) {
+                          console.error('Calendar event error:', eventError);
+                          alert('Error creating calendar event: ' + eventError.message);
+                          return;
+                        }
 
-                        // Create meeting room
-                        const roomSlug = Math.random().toString(36).substring(2, 10);
-                        const { error: roomError } = await supabase
-                          .from('meeting_rooms')
-                          .insert({
-                            room_slug: roomSlug,
-                            title: title,
-                            calendar_event_id: eventData.id,
-                            scheduled_at: startTime.toISOString()
-                          });
+                        console.log('✅ Calendar event created:', eventData?.id);
+                        showToast(`Meeting scheduled for ${date} at ${time}!`, 'success');
 
-                        if (roomError) throw roomError;
+                        // Try to create meeting room (optional - may not have table)
+                        try {
+                          const roomSlug = Math.random().toString(36).substring(2, 10);
+                          const { error: roomError } = await supabase
+                            .from('meeting_rooms')
+                            .insert({
+                              room_slug: roomSlug,
+                              title: title,
+                              calendar_event_id: eventData.id,
+                              scheduled_at: startTime.toISOString()
+                            });
 
-                        const roomLink = `${window.location.origin}/room/${roomSlug}`;
-                        showToast(`Meeting scheduled! Room: ${roomLink}`, 'success');
-
-                        // Copy link to clipboard
-                        navigator.clipboard.writeText(roomLink);
-                        alert(`Meeting scheduled!\n\nRoom link copied to clipboard:\n${roomLink}`);
+                          if (!roomError) {
+                            const roomLink = `${window.location.origin}/room/${roomSlug}`;
+                            navigator.clipboard.writeText(roomLink);
+                            alert(`Meeting scheduled!\\n\\nRoom link copied to clipboard:\\n${roomLink}`);
+                          } else {
+                            console.log('Meeting room creation skipped (table may not exist)');
+                            alert(`Meeting scheduled for ${date} at ${time}!\\n\\nCheck your calendar.`);
+                          }
+                        } catch (roomErr) {
+                          console.log('Meeting room feature not available');
+                          alert(`Meeting scheduled for ${date} at ${time}!`);
+                        }
                       } catch (err) {
                         console.error('Error creating meeting:', err);
                         alert('Error creating meeting: ' + err.message);
