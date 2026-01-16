@@ -359,8 +359,9 @@ async function handleIncomingMessage(pageId, event) {
         // Try multiple sources for participant name
         let participantName = existingConv?.participant_name;
 
-        // Fetch name if missing (for both incoming messages AND echoes)
-        if (!participantName) {
+        // Fetch name if missing, empty, or is "Unknown" (for both incoming messages AND echoes)
+        const needsNameLookup = !participantName || participantName === 'Unknown' || participantName.trim() === '';
+        if (needsNameLookup) {
             // Source 1: Check if Facebook included sender name in the event
             const senderNameFromEvent = event.sender?.name || event.recipient?.name || message.sender_name;
             if (senderNameFromEvent) {
