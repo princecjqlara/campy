@@ -88,7 +88,7 @@ async function fetchFacebookUserName(userId, pageId) {
             return null;
         }
 
-        // Try to fetch user profile from Facebook using PSID
+        // Try Method 1: Direct PSID lookup
         const url = `https://graph.facebook.com/v21.0/${userId}?fields=name,first_name,last_name&access_token=${page.page_access_token}`;
         console.log(`[WEBHOOK] Fetching user profile for PSID: ${userId}`);
 
@@ -96,14 +96,15 @@ async function fetchFacebookUserName(userId, pageId) {
         const responseText = await response.text();
 
         console.log(`[WEBHOOK] Facebook API response status: ${response.status}`);
+        console.log(`[WEBHOOK] Facebook API response: ${responseText.substring(0, 200)}`);
 
         if (!response.ok) {
-            // Silently handle common privacy/permission errors - don't spam logs
+            // Log privacy errors - this helps debugging
             try {
                 const errorData = JSON.parse(responseText);
+                console.log(`[WEBHOOK] Facebook API error code: ${errorData.error?.code}, message: ${errorData.error?.message?.substring(0, 100)}`);
                 if (errorData.error?.code === 100) {
-                    // Privacy restriction - common, don't log as error
-                    return null;
+                    console.log('[WEBHOOK] Privacy restriction - user profile not accessible');
                 } else if (errorData.error?.code === 190) {
                     console.error('[WEBHOOK] Page access token may be expired');
                 }
@@ -118,7 +119,7 @@ async function fetchFacebookUserName(userId, pageId) {
             const userName = profile.name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
 
             if (userName) {
-                console.log(`[WEBHOOK] Successfully fetched user name: ${userName}`);
+                console.log(`[WEBHOOK] ✅ Successfully fetched user name: ${userName}`);
                 return userName;
             } else {
                 console.log('[WEBHOOK] Profile returned but no name fields available');
@@ -130,6 +131,57 @@ async function fetchFacebookUserName(userId, pageId) {
         }
     } catch (err) {
         console.error('[WEBHOOK] Exception fetching user name:', err.message);
+        return null;
+    }
+}
+
+/**
+ * Alternative: Fetch name from conversation participants API
+ * This is how sync gets names successfully
+ */
+async function fetchNameFromConversation(conversationId, participantId, pageId) {
+    const db = getSupabase();
+    if (!db) return null;
+
+    try {
+        const { data: page } = await db
+            .from('facebook_pages')
+            .select('page_access_token')
+            .eq('page_id', pageId)
+            .single();
+
+        if (!page?.page_access_token) return null;
+
+        // Fetch conversation with participants (this is how sync gets names!)
+        const url = `https://graph.facebook.com/v21.0/${conversationId}?fields=participants{id,name},messages.limit(5){from{id,name}}&access_token=${page.page_access_token}`;
+        console.log(`[WEBHOOK] Trying conversation API for name...`);
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            console.log('[WEBHOOK] Conversation API failed:', response.status);
+            return null;
+        }
+
+        const data = await response.json();
+
+        // Source 1: Check participants
+        const participant = data.participants?.data?.find(p => p.id === participantId);
+        if (participant?.name) {
+            console.log(`[WEBHOOK] ✅ Got name from conversation participants: ${participant.name}`);
+            return participant.name;
+        }
+
+        // Source 2: Check message sender (from field)
+        const customerMsg = data.messages?.data?.find(m => m.from?.id === participantId && m.from?.name);
+        if (customerMsg?.from?.name) {
+            console.log(`[WEBHOOK] ✅ Got name from message sender: ${customerMsg.from.name}`);
+            return customerMsg.from.name;
+        }
+
+        console.log('[WEBHOOK] Conversation API returned no name');
+        return null;
+    } catch (err) {
+        console.log('[WEBHOOK] Conversation API error:', err.message);
         return null;
     }
 }
@@ -393,10 +445,16 @@ async function handleIncomingMessage(pageId, event) {
                 participantName = senderNameFromEvent;
             }
 
-            // Source 2: Try to fetch from Facebook Graph API
+            // Source 2: Try to fetch from Facebook Graph API (direct profile lookup)
             if (!participantName) {
                 console.log(`[WEBHOOK] Fetching name from API for participant: ${participantId}`);
                 participantName = await fetchFacebookUserName(participantId, pageId);
+            }
+
+            // Source 3: Try conversation API with participants (this is how sync works!)
+            if (!participantName && conversationId && !conversationId.startsWith('t_')) {
+                console.log(`[WEBHOOK] Trying conversation API for name (sync method)...`);
+                participantName = await fetchNameFromConversation(conversationId, participantId, pageId);
             }
 
             // Source 3: Try to extract name from message content using patterns
