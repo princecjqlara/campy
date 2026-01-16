@@ -883,15 +883,16 @@ When customer wants to schedule/book, share this: ${config.booking_url}
 When a customer confirms a specific date and time for a meeting/booking:
 1. Confirm the booking in your message to them
 2. At the VERY END of your message (after all |||), add this marker on its own line:
-   BOOKING_CONFIRMED: YYYY-MM-DD HH:MM - CustomerName - PhoneNumber
+   BOOKING_CONFIRMED: YYYY-MM-DD HH:MM | CustomerName | PhoneNumber
    
-Example: If customer says "Yes, book me for January 20 at 2pm" and their name is Maria:
+Example: If customer says "Yes, book me for January 20 at 2pm" and their name is Maria with phone 09171234567:
 Your response: "Perfect po! ✅ ||| Booked ka na for January 20, 2026 at 2:00 PM. ||| See you then!
-BOOKING_CONFIRMED: 2026-01-20 14:00 - Maria - "
+BOOKING_CONFIRMED: 2026-01-20 14:00 | Maria | 09171234567"
 
 Notes:
 - Use 24-hour format for time (14:00 not 2pm)
-- If phone number is unknown, leave blank after the last dash
+- Use PIPE character | as separator (NOT dash -)
+- If phone number is unknown, leave blank after the last pipe
 - This marker MUST be on its own line at the very end
 - Only use this when customer CONFIRMS a specific date/time, not when just asking about availability
 `;
@@ -1022,13 +1023,18 @@ Notes:
                 const bookingMatch = aiReply.match(/BOOKING_CONFIRMED:\s*(.+)/i);
                 if (bookingMatch) {
                     const bookingInfo = bookingMatch[1];
-                    console.log('[WEBHOOK] Booking detected:', bookingInfo);
+                    console.log('[WEBHOOK] Booking detected raw:', bookingInfo);
 
-                    // Parse the booking info (format: DATE TIME - NAME - PHONE)
-                    const parts = bookingInfo.split('-').map(p => p.trim());
+                    // Parse the booking info (format: DATETIME | NAME | PHONE)
+                    // Split by pipe character (not dash, which is in dates)
+                    const parts = bookingInfo.split('|').map(p => p.trim());
+                    console.log('[WEBHOOK] Booking parts:', JSON.stringify(parts));
+
                     const dateTimeStr = parts[0] || '';
                     const customerName = parts[1] || conversation?.participant_name || 'Customer';
                     const phone = parts[2] || '';
+
+                    console.log(`[WEBHOOK] Parsed: dateTime="${dateTimeStr}", name="${customerName}", phone="${phone}"`);
 
                     // Try to parse date/time
                     const bookingDate = new Date(dateTimeStr);
