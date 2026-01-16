@@ -1204,8 +1204,8 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
                 // Pattern 1: Look for ISO date format (2026-01-17 18:00)
                 const isoDateMatch = aiReply.match(/(?:scheduled|booked|confirmed).*?for\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/i);
 
-                // Pattern 2: Look for natural date (January 17, 2026 at 6:00 PM)
-                const naturalDateMatch = aiReply.match(/(?:scheduled|booked|confirmed).*?for\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:,?\s*(\d{4}))?\s+(?:at\s+)?(\d{1,2}:\d{2}\s*(?:AM|PM)?)/i);
+                // Pattern 2: Look for natural date (January 19, 2026 at 2:00 PM) - flexible pattern
+                const naturalDateMatch = aiReply.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s*(\d{4})?\s*(?:at\s*)?(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
 
                 let detectedDate = null;
                 let detectedTime = null;
@@ -1215,22 +1215,24 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
                     detectedTime = isoDateMatch[2]; // 18:00
                     console.log(`[WEBHOOK] FALLBACK: Detected ISO date booking: ${detectedDate} ${detectedTime}`);
                 } else if (naturalDateMatch) {
+                    console.log('[WEBHOOK] FALLBACK: Match found:', JSON.stringify(naturalDateMatch.slice(0, 7)));
                     const monthNames = { january: '01', february: '02', march: '03', april: '04', may: '05', june: '06', july: '07', august: '08', september: '09', october: '10', november: '11', december: '12' };
                     const month = monthNames[naturalDateMatch[1].toLowerCase()];
                     const day = naturalDateMatch[2].padStart(2, '0');
                     const year = naturalDateMatch[3] || new Date().getFullYear();
-                    let time = naturalDateMatch[4];
+                    let hour = parseInt(naturalDateMatch[4]);
+                    const minute = naturalDateMatch[5];
+                    const ampm = naturalDateMatch[6];
 
                     // Convert to 24-hour format
-                    if (time.toLowerCase().includes('pm') && !time.startsWith('12')) {
-                        const [h, m] = time.replace(/\s*(AM|PM)/i, '').split(':');
-                        time = `${parseInt(h) + 12}:${m}`;
-                    } else {
-                        time = time.replace(/\s*(AM|PM)/i, '');
+                    if (ampm && ampm.toLowerCase() === 'pm' && hour < 12) {
+                        hour += 12;
+                    } else if (ampm && ampm.toLowerCase() === 'am' && hour === 12) {
+                        hour = 0;
                     }
 
                     detectedDate = `${year}-${month}-${day}`;
-                    detectedTime = time;
+                    detectedTime = `${String(hour).padStart(2, '0')}:${minute}`;
                     console.log(`[WEBHOOK] FALLBACK: Detected natural date booking: ${detectedDate} ${detectedTime}`);
                 }
 
@@ -1284,10 +1286,41 @@ BOOKING_CONFIRMED: 2026-01-17 18:00 | Prince | 09944465847"
                         try {
                             await db
                                 .from('facebook_conversations')
-                                .update({ pipeline_stage: 'booked', booking_date: bookingDate.toISOString() })
+                                .update({ pipeline_stage: 'booked', booking_date: bookingDate.toISOString(), phone_number: phone || null })
                                 .eq('conversation_id', conversationId);
                             console.log('[WEBHOOK] FALLBACK: ✅ Updated conversation to booked');
                         } catch (e) { }
+
+                        // ADD TO CLIENTS TABLE (pipeline)
+                        try {
+                            let existingClient = null;
+                            if (phone) {
+                                const { data: byPhone } = await db.from('clients').select('id').ilike('contact_details', `%${phone}%`).limit(1).maybeSingle();
+                                existingClient = byPhone;
+                            }
+                            if (!existingClient && customerName && customerName !== 'Customer' && customerName !== 'Unknown') {
+                                const { data: byName } = await db.from('clients').select('id').ilike('client_name', customerName).limit(1).maybeSingle();
+                                existingClient = byName;
+                            }
+
+                            if (!existingClient) {
+                                const clientData = {
+                                    client_name: customerName,
+                                    contact_details: phone || null,
+                                    notes: `Booked via AI on ${bookingDate.toLocaleDateString()}`,
+                                    phase: 'booked',
+                                    payment_status: 'unpaid',
+                                    created_at: new Date().toISOString()
+                                };
+                                await db.from('clients').insert(clientData);
+                                console.log('[WEBHOOK] FALLBACK: ✅ Added to clients pipeline');
+                            } else {
+                                await db.from('clients').update({ phase: 'booked' }).eq('id', existingClient.id);
+                                console.log('[WEBHOOK] FALLBACK: ✅ Updated existing client to booked');
+                            }
+                        } catch (clientErr) {
+                            console.log('[WEBHOOK] FALLBACK: Clients error (non-fatal):', clientErr.message);
+                        }
                     }
                 }
             } catch (fallbackErr) {
