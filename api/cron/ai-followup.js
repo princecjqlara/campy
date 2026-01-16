@@ -82,7 +82,8 @@ export default async function handler(req, res) {
             });
         }
 
-        const silenceHours = config.intuition_silence_hours || 4;
+        // Use configured silence hours OR default to 0.5 hours (30 mins) for aggressive first follow-up
+        const silenceHours = config.intuition_silence_hours || 0.5;
         const maxPerRun = 50; // Increased batch size to process more users per run
 
         // Calculate cutoff time (conversations inactive for X hours)
@@ -91,7 +92,6 @@ export default async function handler(req, res) {
         // Find conversations that need follow-up:
         // - AI is enabled (or null = default enabled)
         // - Human hasn't taken over
-        // - Last message was from the page (meaning we're waiting for user reply)
         // - Last message time is older than cutoff (silence period passed)
         const { data: conversations, error } = await db
             .from('facebook_conversations')
@@ -109,7 +109,6 @@ export default async function handler(req, res) {
             .neq('ai_enabled', false) // Include null (default enabled) and true
             .neq('human_takeover', true) // Include null and false
             // Follow up any conversation that's been inactive for the silence period
-            // We don't filter by last_message_from_page because we want to re-engage ALL inactive contacts
             .lt('last_message_time', cutoffTime.toISOString())
             .order('last_message_time', { ascending: true }) // Oldest first (most in need of follow-up)
             .limit(maxPerRun);
@@ -139,14 +138,27 @@ export default async function handler(req, res) {
                 // Check for existing pending follow-ups
                 const { data: existingFollowups } = await db
                     .from('ai_followup_schedule')
-                    .select('id')
+                    .select('id, scheduled_at, created_at')
                     .eq('conversation_id', conv.conversation_id)
                     .eq('status', 'pending');
 
                 if (existingFollowups && existingFollowups.length > 0) {
-                    // Already has a pending follow-up
-                    results.skipped++;
-                    continue;
+                    // Check if existing follow-up is stale (more than 2 hours old and still pending)
+                    const oldestFollowup = existingFollowups[0];
+                    const followupAge = (now.getTime() - new Date(oldestFollowup.created_at).getTime()) / (1000 * 60 * 60);
+
+                    if (followupAge > 2) {
+                        // Stale follow-up - cancel it and reschedule
+                        console.log(`[CRON] Cancelling stale follow-up for ${conv.conversation_id} (${followupAge.toFixed(1)}h old)`);
+                        await db
+                            .from('ai_followup_schedule')
+                            .update({ status: 'cancelled' })
+                            .eq('id', oldestFollowup.id);
+                    } else {
+                        // Recent pending follow-up exists, skip
+                        results.skipped++;
+                        continue;
+                    }
                 }
 
                 // Calculate minutes since last message for smart timing
