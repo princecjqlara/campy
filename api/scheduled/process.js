@@ -303,7 +303,7 @@ export default async function handler(req, res) {
                         // Get conversation details and check if AI is enabled
                         const { data: conversation } = await supabase
                             .from('facebook_conversations')
-                            .select('participant_id, participant_name, ai_enabled')
+                            .select('participant_id, participant_name, ai_enabled, lead_status')
                             .eq('conversation_id', followup.conversation_id)
                             .single();
 
@@ -313,6 +313,16 @@ export default async function handler(req, res) {
                             await supabase
                                 .from('ai_followup_schedule')
                                 .update({ status: 'cancelled', error_message: 'AI disabled for this contact' })
+                                .eq('id', followup.id);
+                            continue;
+                        }
+
+                        // Check if customer is already booked/converted - skip follow-ups
+                        if (conversation?.lead_status === 'appointment_booked' || conversation?.lead_status === 'converted') {
+                            console.log(`[AI FOLLOWUP] Customer is ${conversation.lead_status} - cancelling follow-up for ${followup.conversation_id}`);
+                            await supabase
+                                .from('ai_followup_schedule')
+                                .update({ status: 'cancelled', error_message: `Customer already ${conversation.lead_status}` })
                                 .eq('id', followup.id);
                             continue;
                         }
@@ -342,13 +352,12 @@ export default async function handler(req, res) {
                         const knowledgeBase = aiConfig.knowledge_base || '';
                         const language = aiConfig.language || 'Taglish';
 
-                        // Get recent conversation messages for context
+                        // Get ALL conversation messages for context (no limit)
                         const { data: recentMessages } = await supabase
                             .from('facebook_messages')
                             .select('message_text, is_from_page, timestamp')
                             .eq('conversation_id', followup.conversation_id)
-                            .order('timestamp', { ascending: false })
-                            .limit(10);
+                            .order('timestamp', { ascending: false });
 
                         // Build conversation context
                         const conversationContext = (recentMessages || [])
@@ -447,24 +456,36 @@ Generate ONLY the follow-up message, nothing else:`;
                             console.log(`[AI FOLLOWUP] ✅ Sent to ${contactName}`);
                             aiFollowupsSent++;
 
-                            // Schedule the NEXT follow-up so UI shows when it will occur
-                            // Default to 4 hours from now, AI cron will adjust if contact responds
-                            const nextFollowupTime = new Date(Date.now() + 4 * 60 * 60 * 1000);
-                            const { error: scheduleError } = await supabase
+                            // Check if there's already a pending follow-up before scheduling another
+                            const { data: existingPending } = await supabase
                                 .from('ai_followup_schedule')
-                                .insert({
-                                    conversation_id: followup.conversation_id,
-                                    page_id: followup.page_id,
-                                    scheduled_at: nextFollowupTime.toISOString(),
-                                    follow_up_type: 'intuition',
-                                    reason: 'Auto-scheduled after previous follow-up sent',
-                                    status: 'pending'
-                                });
+                                .select('id')
+                                .eq('conversation_id', followup.conversation_id)
+                                .eq('status', 'pending')
+                                .limit(1);
 
-                            if (scheduleError) {
-                                console.log(`[AI FOLLOWUP] Could not schedule next: ${scheduleError.message}`);
+                            // Only schedule the NEXT follow-up if no pending one exists
+                            if (!existingPending || existingPending.length === 0) {
+                                // Default to 4 hours from now, AI cron will adjust if contact responds
+                                const nextFollowupTime = new Date(Date.now() + 4 * 60 * 60 * 1000);
+                                const { error: scheduleError } = await supabase
+                                    .from('ai_followup_schedule')
+                                    .insert({
+                                        conversation_id: followup.conversation_id,
+                                        page_id: followup.page_id,
+                                        scheduled_at: nextFollowupTime.toISOString(),
+                                        follow_up_type: 'intuition',
+                                        reason: 'Auto-scheduled after previous follow-up sent',
+                                        status: 'pending'
+                                    });
+
+                                if (scheduleError) {
+                                    console.log(`[AI FOLLOWUP] Could not schedule next: ${scheduleError.message}`);
+                                } else {
+                                    console.log(`[AI FOLLOWUP] 📅 Next follow-up scheduled for ${nextFollowupTime.toISOString()}`);
+                                }
                             } else {
-                                console.log(`[AI FOLLOWUP] 📅 Next follow-up scheduled for ${nextFollowupTime.toISOString()}`);
+                                console.log(`[AI FOLLOWUP] ⏭️ Pending follow-up already exists for ${followup.conversation_id} - skipping reschedule`);
                             }
                         } else {
                             const err = await response.json();

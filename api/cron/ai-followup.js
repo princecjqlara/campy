@@ -180,10 +180,13 @@ export default async function handler(req, res) {
                 last_message_from_page,
                 active_goal_id,
                 ai_enabled,
-                human_takeover
+                human_takeover,
+                lead_status
             `)
             .neq('ai_enabled', false) // Include null (default enabled) and true
             .neq('human_takeover', true) // Include null and false
+            // SKIP booked/converted customers - they don't need follow-ups
+            .not('lead_status', 'in', '(appointment_booked,converted)')
             // Follow up any conversation that's been inactive for the silence period
             .lt('last_message_time', cutoffTime.toISOString())
             .order('last_message_time', { ascending: true }) // Oldest first (most in need of follow-up)
