@@ -242,6 +242,254 @@ async function fetchRealConversationId(participantId, pageId) {
 }
 
 /**
+ * Handle Facebook comment on post
+ * - Analyze if commenter is interested
+ * - Auto-reply to comment
+ * - Send DM to interested commenters
+ */
+async function handleCommentEvent(pageId, commentData) {
+    const db = getSupabase();
+    if (!db) return;
+
+    try {
+        const commentId = commentData.comment_id;
+        const postId = commentData.post_id;
+        const senderId = commentData.from?.id;
+        const senderName = commentData.from?.name || 'Unknown';
+        const commentText = commentData.message || '';
+        const verb = commentData.verb; // 'add', 'edit', 'remove'
+
+        // Only process new comments
+        if (verb !== 'add' || !commentText || !senderId) {
+            console.log('[WEBHOOK] Skipping comment - not a new comment or missing data');
+            return;
+        }
+
+        // Skip comments from the page itself
+        if (senderId === pageId) {
+            console.log('[WEBHOOK] Skipping comment from page itself');
+            return;
+        }
+
+        console.log(`[WEBHOOK] Processing comment from ${senderName}: "${commentText.substring(0, 50)}..."`);
+
+        // Get AI settings
+        const { data: settings } = await db
+            .from('settings')
+            .select('value')
+            .eq('key', 'ai_chatbot_config')
+            .single();
+
+        const config = settings?.value || {};
+
+        // Check if comment auto-reply is enabled
+        if (config.comment_auto_reply_enabled === false) {
+            console.log('[WEBHOOK] Comment auto-reply disabled');
+            return;
+        }
+
+        // Check global bot enabled
+        if (config.global_bot_enabled === false) {
+            console.log('[WEBHOOK] Global bot disabled, skipping comment');
+            return;
+        }
+
+        // Get page access token
+        const { data: page } = await db
+            .from('facebook_pages')
+            .select('page_access_token')
+            .eq('page_id', pageId)
+            .single();
+
+        if (!page?.page_access_token) {
+            console.error('[WEBHOOK] No page access token for comment reply');
+            return;
+        }
+
+        // Interest keywords - use configured or defaults
+        const interestKeywords = (config.comment_interest_keywords ||
+            'interested,how much,price,magkano,pls,please,dm,pm,info,avail').toLowerCase().split(',').map(k => k.trim());
+
+        // Check if comment shows interest
+        const lowerComment = commentText.toLowerCase();
+        const isInterested = interestKeywords.some(kw => lowerComment.includes(kw));
+
+        console.log(`[WEBHOOK] Comment interest check: ${isInterested ? 'INTERESTED' : 'not interested'}`);
+
+        // Generate AI reply for the comment
+        const commentReplyPrompt = config.comment_reply_prompt ||
+            'Thank the user briefly and invite them to check their DM for more info.';
+
+        // Build simple AI prompt for comment reply
+        const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY || process.env.VITE_NVIDIA_API_KEY;
+        if (!NVIDIA_API_KEY) {
+            console.log('[WEBHOOK] No NVIDIA API key for AI comment reply');
+            return;
+        }
+
+        let replyText = '';
+        try {
+            const aiResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${NVIDIA_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'meta/llama-3.1-8b-instruct',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: `You are replying to a Facebook comment on a business post.
+Keep replies SHORT (1-2 sentences max).
+Use Taglish (Tagalog + English mix) if the comment is in Tagalog.
+Be friendly and professional.
+${commentReplyPrompt}
+${isInterested ? 'This person seems interested - thank them and say you sent them a DM.' : 'Just respond helpfully.'}`
+                        },
+                        { role: 'user', content: `Comment from ${senderName}: "${commentText}"` }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 100
+                })
+            });
+
+            const aiResult = await aiResponse.json();
+            replyText = aiResult.choices?.[0]?.message?.content || '';
+        } catch (aiErr) {
+            console.log('[WEBHOOK] AI error for comment reply:', aiErr.message);
+            replyText = isInterested
+                ? `Hi ${senderName}! Thank you for your interest! 😊 Check your DM po!`
+                : `Hi ${senderName}! Thank you for your comment! 😊`;
+        }
+
+        // Post reply to comment
+        if (replyText) {
+            try {
+                const replyResponse = await fetch(
+                    `https://graph.facebook.com/v21.0/${commentId}/comments?access_token=${page.page_access_token}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: replyText })
+                    }
+                );
+
+                if (replyResponse.ok) {
+                    console.log(`[WEBHOOK] ✅ Replied to comment: "${replyText.substring(0, 50)}..."`);
+                } else {
+                    const errData = await replyResponse.json();
+                    console.log('[WEBHOOK] Comment reply failed:', errData.error?.message);
+                }
+            } catch (replyErr) {
+                console.log('[WEBHOOK] Error replying to comment:', replyErr.message);
+            }
+        }
+
+        // If interested, send DM to the commenter
+        if (isInterested && config.comment_dm_interested !== false) {
+            console.log(`[WEBHOOK] Sending DM to interested commenter ${senderName}`);
+
+            // Generate DM message
+            let dmText = '';
+            try {
+                const dmResponse = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${NVIDIA_API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'meta/llama-3.1-8b-instruct',
+                        messages: [
+                            {
+                                role: 'system',
+                                content: `You are a sales assistant sending a DM to someone who commented on a Facebook post.
+Keep it SHORT and friendly (2-3 sentences).
+Use Taglish (Tagalog + English mix).
+Introduce yourself, thank them for the interest, and ask how you can help.
+Knowledge base: ${config.knowledge_base || 'We are a digital marketing agency.'}`
+                            },
+                            { role: 'user', content: `Their comment was: "${commentText}". Their name is ${senderName}.` }
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 150
+                    })
+                });
+
+                const dmResult = await dmResponse.json();
+                dmText = dmResult.choices?.[0]?.message?.content || '';
+            } catch (dmAiErr) {
+                console.log('[WEBHOOK] AI error for DM:', dmAiErr.message);
+                dmText = `Hi ${senderName}! 😊 Thank you sa comment mo! Nakita ko interested ka. How can I help you po?`;
+            }
+
+            // Send DM via Messenger
+            if (dmText) {
+                try {
+                    const msgResponse = await fetch(
+                        `https://graph.facebook.com/v21.0/me/messages?access_token=${page.page_access_token}`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                recipient: { id: senderId },
+                                message: { text: dmText },
+                                messaging_type: 'MESSAGE_TAG',
+                                tag: 'CONFIRMED_EVENT_UPDATE' // Using tag for proactive messaging
+                            })
+                        }
+                    );
+
+                    if (msgResponse.ok) {
+                        console.log(`[WEBHOOK] ✅ Sent DM to ${senderName}: "${dmText.substring(0, 50)}..."`);
+
+                        // Create/update conversation for this commenter
+                        const conversationId = `fb_comment_${senderId}_${Date.now()}`;
+                        await db.from('facebook_conversations').upsert({
+                            conversation_id: conversationId,
+                            page_id: pageId,
+                            participant_id: senderId,
+                            participant_name: senderName,
+                            last_message_text: dmText,
+                            last_message_time: new Date().toISOString(),
+                            last_message_from_page: true,
+                            source: 'comment',
+                            ai_enabled: true,
+                            created_at: new Date().toISOString()
+                        }, { onConflict: 'participant_id,page_id' });
+
+                    } else {
+                        const errData = await msgResponse.json();
+                        console.log('[WEBHOOK] DM failed:', errData.error?.message);
+                        // Common error: user hasn't messaged page before (can't DM without prior conversation)
+                    }
+                } catch (msgErr) {
+                    console.log('[WEBHOOK] Error sending DM:', msgErr.message);
+                }
+            }
+        }
+
+        // Log comment for analytics
+        await db.from('facebook_comments').insert({
+            comment_id: commentId,
+            post_id: postId,
+            page_id: pageId,
+            commenter_id: senderId,
+            commenter_name: senderName,
+            comment_text: commentText,
+            is_interested: isInterested,
+            auto_replied: !!replyText,
+            dm_sent: isInterested && config.comment_dm_interested !== false,
+            created_at: new Date().toISOString()
+        }).catch(() => { }); // Ignore if table doesn't exist
+
+    } catch (error) {
+        console.error('[WEBHOOK] Error handling comment:', error.message);
+    }
+}
+
+/**
  * Facebook Webhook Handler
  * Handles verification (GET) and incoming messages (POST)
  */
@@ -299,6 +547,15 @@ export default async function handler(req, res) {
                         }
                         // Silently ignore delivery receipts, read receipts, typing indicators
                         // These are: event.delivery, event.read, event.typing
+                    }
+
+                    // Handle Facebook feed events (comments, reactions, etc.)
+                    const changes = entry.changes || [];
+                    for (const change of changes) {
+                        if (change.field === 'feed' && change.value?.item === 'comment') {
+                            console.log('[WEBHOOK] Comment received on post');
+                            await handleCommentEvent(pageId, change.value);
+                        }
                     }
                 }
 
@@ -649,6 +906,102 @@ async function handleIncomingMessage(pageId, event) {
         if (!isFromPage && message.text) {
             console.log('[WEBHOOK] Triggering AI auto-response...');
             await triggerAIResponse(db, conversationId, pageId, existingConv);
+
+            // AI AUTO-LABELING: Apply labels based on conversation content
+            // Run in background to not block response
+            (async () => {
+                try {
+                    const { data: aiSettings } = await db
+                        .from('settings')
+                        .select('value')
+                        .eq('key', 'ai_chatbot_config')
+                        .single();
+
+                    if (aiSettings?.value?.auto_labeling_enabled !== false) {
+                        const { autoLabelConversation } = await import('../src/services/aiConversationAnalyzer');
+
+                        // Get messages
+                        const { data: msgs } = await db
+                            .from('facebook_messages')
+                            .select('message_text, is_from_page')
+                            .eq('conversation_id', conversationId)
+                            .order('timestamp', { ascending: true })
+                            .limit(50);
+
+                        if (msgs && msgs.length > 0) {
+                            // Get existing tags
+                            const { data: existingTagAssignments } = await db
+                                .from('conversation_tag_assignments')
+                                .select('tag:tag_id(name)')
+                                .eq('conversation_id', conversationId);
+
+                            const existingTagNames = (existingTagAssignments || []).map(t => t.tag?.name).filter(Boolean);
+                            const labelingRules = aiSettings?.value?.labeling_rules || '';
+
+                            const result = await autoLabelConversation(msgs, existingTagNames, labelingRules);
+
+                            if (result.labelsToAdd?.length > 0 || result.labelsToRemove?.length > 0) {
+                                console.log(`[WEBHOOK] Auto-label result: +${result.labelsToAdd?.join(',')} -${result.labelsToRemove?.join(',')} | ${result.reasoning}`);
+
+                                // Apply labels (create tag if needed, then assign)
+                                for (const labelName of (result.labelsToAdd || [])) {
+                                    const normalizedName = labelName.toUpperCase().trim();
+
+                                    // Check if tag exists
+                                    let { data: existingTag } = await db
+                                        .from('conversation_tags')
+                                        .select('id')
+                                        .eq('page_id', pageId)
+                                        .ilike('name', normalizedName)
+                                        .single();
+
+                                    // Create if not exists
+                                    if (!existingTag) {
+                                        const { data: newTag } = await db
+                                            .from('conversation_tags')
+                                            .insert({ page_id: pageId, name: normalizedName, color: '#818cf8' })
+                                            .select('id')
+                                            .single();
+                                        existingTag = newTag;
+                                    }
+
+                                    // Assign tag
+                                    if (existingTag) {
+                                        await db
+                                            .from('conversation_tag_assignments')
+                                            .upsert({
+                                                conversation_id: conversationId,
+                                                tag_id: existingTag.id
+                                            }, { onConflict: 'conversation_id,tag_id', ignoreDuplicates: true });
+                                    }
+                                }
+
+                                // Remove labels
+                                for (const labelName of (result.labelsToRemove || [])) {
+                                    const normalizedName = labelName.toUpperCase().trim();
+
+                                    const { data: tagToRemove } = await db
+                                        .from('conversation_tags')
+                                        .select('id')
+                                        .eq('page_id', pageId)
+                                        .ilike('name', normalizedName)
+                                        .single();
+
+                                    if (tagToRemove) {
+                                        await db
+                                            .from('conversation_tag_assignments')
+                                            .delete()
+                                            .eq('conversation_id', conversationId)
+                                            .eq('tag_id', tagToRemove.id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (labelErr) {
+                    console.log('[WEBHOOK] Auto-label error (non-fatal):', labelErr.message);
+                }
+            })();
         }
     } catch (error) {
         console.error('[WEBHOOK] Exception:', error);

@@ -2510,6 +2510,187 @@ A: We offer optimization and A/B testing. If after 14 days walang improvement, f
                 </div>
               </div>
 
+              {/* AI Auto-Labeling Rules */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>🏷️ AI Auto-Labeling Rules</h5>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                  Define rules for how the AI should automatically label/tag contacts based on their conversations.
+                  Format: LABEL_NAME: condition/criteria
+                </p>
+
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', cursor: 'pointer', marginBottom: '1rem' }}>
+                  <span>Enable AI Auto-Labeling</span>
+                  <input
+                    type="checkbox"
+                    defaultChecked={(() => {
+                      try {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        return config.auto_labeling_enabled !== false;
+                      } catch { return true; }
+                    })()}
+                    onChange={(e) => {
+                      const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                      config.auto_labeling_enabled = e.target.checked;
+                      localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                    }}
+                    style={{ width: '20px', height: '20px', accentColor: '#6366f1', cursor: 'pointer' }}
+                  />
+                </label>
+
+                <textarea
+                  className="form-input"
+                  rows={10}
+                  placeholder={`QUALIFIED: Customer mentions budget, asks about pricing, shows buying intent
+UNQUALIFIED: Customer says not interested, wrong fit, or no budget
+HOT_LEAD: Customer wants to book immediately or mentions urgency
+FOLLOW_UP_NEEDED: Customer requested callback or said "later"
+INTERESTED: Customer is asking questions about the service
+NEEDS_INFO: Customer wants more details before deciding
+PRICE_SENSITIVE: Customer is hesitant due to pricing
+DECISION_MAKER: Customer can make purchase decisions
+REFERRAL: Customer was referred by someone`}
+                  defaultValue={(() => {
+                    try {
+                      const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                      return config.labeling_rules || '';
+                    } catch { return ''; }
+                  })()}
+                  onChange={(e) => {
+                    const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                    config.labeling_rules = e.target.value;
+                    localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                  }}
+                  style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.875rem' }}
+                />
+
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '1rem',
+                  background: 'rgba(99, 102, 241, 0.1)',
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)'
+                }}>
+                  <div style={{ fontWeight: '600', marginBottom: '0.5rem', color: 'var(--primary)' }}>
+                    💡 How it works
+                  </div>
+                  <ul style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0, paddingLeft: '1.25rem' }}>
+                    <li>AI analyzes each conversation after a customer message</li>
+                    <li>Labels are automatically applied/removed based on your rules</li>
+                    <li>Labels appear as tags on contacts in the Messenger tab</li>
+                    <li>Tags are created automatically if they don't exist</li>
+                    <li>Remember to click "Save to Database" after changing rules!</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Comment Auto-Reply Settings */}
+              <div style={{ marginBottom: '2rem' }}>
+                <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>💬 Comment Auto-Reply</h5>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                  Automatically reply to comments on your Facebook posts and DM interested commenters.
+                </p>
+
+                <div style={{ display: 'grid', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
+                    <span>Enable Comment Auto-Reply</span>
+                    <input
+                      type="checkbox"
+                      defaultChecked={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.comment_auto_reply_enabled !== false;
+                        } catch { return true; }
+                      })()}
+                      onChange={(e) => {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        config.comment_auto_reply_enabled = e.target.checked;
+                        localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                      }}
+                      style={{ width: '20px', height: '20px', accentColor: '#6366f1', cursor: 'pointer' }}
+                    />
+                  </label>
+
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>
+                    <span>Auto-DM Interested Commenters</span>
+                    <input
+                      type="checkbox"
+                      defaultChecked={(() => {
+                        try {
+                          const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                          return config.comment_dm_interested !== false;
+                        } catch { return true; }
+                      })()}
+                      onChange={(e) => {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        config.comment_dm_interested = e.target.checked;
+                        localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                      }}
+                      style={{ width: '20px', height: '20px', accentColor: '#6366f1', cursor: 'pointer' }}
+                    />
+                  </label>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '1rem' }}>
+                  <label className="form-label">Interest Keywords (comma-separated)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="interested,how much,price,magkano,pls,please,dm,pm,info,avail"
+                    defaultValue={(() => {
+                      try {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        return config.comment_interest_keywords || '';
+                      } catch { return ''; }
+                    })()}
+                    onChange={(e) => {
+                      const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                      config.comment_interest_keywords = e.target.value;
+                      localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                    }}
+                  />
+                  <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                    Comments containing these keywords will trigger a DM
+                  </small>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Comment Reply Prompt</label>
+                  <textarea
+                    className="form-input"
+                    rows={3}
+                    placeholder="Thank the user briefly and invite them to check their DM for more info."
+                    defaultValue={(() => {
+                      try {
+                        const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                        return config.comment_reply_prompt || '';
+                      } catch { return ''; }
+                    })()}
+                    onChange={(e) => {
+                      const config = JSON.parse(localStorage.getItem('ai_chatbot_config') || '{}');
+                      config.comment_reply_prompt = e.target.value;
+                      localStorage.setItem('ai_chatbot_config', JSON.stringify(config));
+                    }}
+                    style={{ resize: 'vertical', fontSize: '0.875rem' }}
+                  />
+                </div>
+
+                <div style={{
+                  marginTop: '1rem',
+                  padding: '1rem',
+                  background: 'rgba(251, 191, 36, 0.1)',
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid rgba(251, 191, 36, 0.3)'
+                }}>
+                  <div style={{ fontWeight: '600', marginBottom: '0.5rem', color: '#fbbf24' }}>
+                    ⚠️ Facebook Setup Required
+                  </div>
+                  <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', margin: 0 }}>
+                    Your Facebook App must be subscribed to the <strong>feed</strong> webhook field.
+                    Go to Facebook Developer Console → Webhooks → Subscribe to "feed" in addition to "messaging".
+                  </p>
+                </div>
+              </div>
+
               {/* Follow-up Prompts - AI Generates Messages */}
               <div style={{ marginBottom: '2rem' }}>
                 <h5 style={{ marginBottom: '1rem', color: 'var(--text-primary)' }}>🤖 Follow-up Prompts (AI-Generated)</h5>

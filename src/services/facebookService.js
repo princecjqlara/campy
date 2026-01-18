@@ -1918,6 +1918,109 @@ class FacebookService {
         }
     }
 
+    /**
+     * Auto-apply labels to a conversation using AI analysis
+     * @param {string} conversationId - Conversation ID
+     * @param {string} pageId - Page ID
+     * @returns {Object} { success: boolean, labelsAdded: string[], labelsRemoved: string[], error?: string }
+     */
+    async autoApplyLabels(conversationId, pageId) {
+        try {
+            // Import the AI analyzer dynamically
+            const { autoLabelConversation } = await import('./aiConversationAnalyzer');
+
+            // Get conversation messages
+            const messages = await this.getMessages(conversationId, 100);
+            if (!messages || messages.length === 0) {
+                return { success: false, labelsAdded: [], labelsRemoved: [], error: 'No messages found' };
+            }
+
+            // Get existing tags for this conversation
+            const existingTags = await this.getConversationTags(conversationId);
+            const existingTagNames = existingTags.map(t => t.name);
+
+            // Get admin labeling rules from settings
+            const { data: settings } = await getSupabase()
+                .from('settings')
+                .select('value')
+                .eq('key', 'ai_chatbot_config')
+                .single();
+
+            const labelingRules = settings?.value?.labeling_rules || '';
+            const autoLabelingEnabled = settings?.value?.auto_labeling_enabled !== false;
+
+            if (!autoLabelingEnabled) {
+                return { success: false, labelsAdded: [], labelsRemoved: [], error: 'Auto-labeling disabled' };
+            }
+
+            // Call AI to determine labels
+            const result = await autoLabelConversation(messages, existingTagNames, labelingRules);
+
+            const labelsAdded = [];
+            const labelsRemoved = [];
+
+            // Get all available tags for this page
+            const allTags = await this.getTags(pageId);
+            const tagsByName = {};
+            allTags.forEach(t => { tagsByName[t.name.toUpperCase()] = t; });
+
+            // Add new labels
+            for (const labelName of (result.labelsToAdd || [])) {
+                const normalizedName = labelName.toUpperCase().trim();
+                let tag = tagsByName[normalizedName];
+
+                // Create tag if it doesn't exist
+                if (!tag) {
+                    try {
+                        tag = await this.createTag(pageId, normalizedName, '#818cf8');
+                        tagsByName[normalizedName] = tag;
+                    } catch (e) {
+                        console.warn(`Failed to create tag ${normalizedName}:`, e);
+                        continue;
+                    }
+                }
+
+                // Assign tag if not already assigned
+                if (!existingTagNames.map(n => n.toUpperCase()).includes(normalizedName)) {
+                    try {
+                        await this.assignTag(conversationId, tag.id);
+                        labelsAdded.push(normalizedName);
+                    } catch (e) {
+                        // Tag might already be assigned (race condition)
+                        console.warn(`Failed to assign tag ${normalizedName}:`, e);
+                    }
+                }
+            }
+
+            // Remove labels
+            for (const labelName of (result.labelsToRemove || [])) {
+                const normalizedName = labelName.toUpperCase().trim();
+                const tag = tagsByName[normalizedName];
+
+                if (tag && existingTagNames.map(n => n.toUpperCase()).includes(normalizedName)) {
+                    try {
+                        await this.removeTag(conversationId, tag.id);
+                        labelsRemoved.push(normalizedName);
+                    } catch (e) {
+                        console.warn(`Failed to remove tag ${normalizedName}:`, e);
+                    }
+                }
+            }
+
+            console.log(`[AUTO-LABEL] ${conversationId}: +${labelsAdded.join(',')} -${labelsRemoved.join(',')} | ${result.reasoning}`);
+
+            return {
+                success: true,
+                labelsAdded,
+                labelsRemoved,
+                reasoning: result.reasoning
+            };
+        } catch (error) {
+            console.error('Error auto-applying labels:', error);
+            return { success: false, labelsAdded: [], labelsRemoved: [], error: error.message };
+        }
+    }
+
     // ============================================
     // BULK MESSAGING
     // ============================================

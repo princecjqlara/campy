@@ -283,11 +283,82 @@ export const analyzeConversation = async (messages, participantName) => {
     };
 };
 
+/**
+ * Auto-label a conversation based on admin-defined rules
+ * @param {Array} messages - Conversation messages
+ * @param {Array} existingTags - Currently assigned tag names
+ * @param {string} labelingRules - Admin-defined rules text
+ * @returns {Object} { labelsToAdd: string[], labelsToRemove: string[], reasoning: string }
+ */
+export const autoLabelConversation = async (messages, existingTags = [], labelingRules = '') => {
+    if (!messages || messages.length === 0) {
+        return { labelsToAdd: [], labelsToRemove: [], reasoning: 'No messages to analyze' };
+    }
+
+    const conversationText = messages
+        .map(m => `${m.is_from_page ? 'Agent' : 'Customer'}: ${m.message_text}`)
+        .join('\n');
+
+    // Default rules if admin hasn't set any
+    const defaultRules = `
+QUALIFIED: Customer mentions budget, asks about pricing/packages, shows buying intent
+UNQUALIFIED: Customer explicitly says not interested, wrong fit, or no budget
+HOT_LEAD: Customer wants to book immediately, mentions urgency, ready to proceed
+FOLLOW_UP_NEEDED: Customer requested callback, said "later", or asked to be contacted again
+INTERESTED: Customer is asking questions, showing curiosity about the service
+`;
+
+    const rulesText = labelingRules?.trim() || defaultRules;
+
+    const systemPrompt = `You are an AI assistant that labels/tags customer conversations based on defined rules.
+
+## LABELING RULES:
+${rulesText}
+
+## CURRENTLY ASSIGNED LABELS:
+${existingTags.length > 0 ? existingTags.join(', ') : 'None'}
+
+## YOUR TASK:
+Analyze the conversation and determine which labels should be ADDED or REMOVED based on the rules.
+- Only suggest labels that match the defined rules
+- Remove labels that no longer apply based on the conversation
+- Be conservative - only add labels you're confident about
+
+Respond ONLY with JSON:
+{
+  "labelsToAdd": ["LABEL_NAME", ...],
+  "labelsToRemove": ["LABEL_NAME", ...],
+  "reasoning": "brief explanation of your decision"
+}`;
+
+    try {
+        const result = await nvidiaChat([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: conversationText }
+        ], { temperature: 0.3, maxTokens: 512 });
+
+        const match = result?.match(/\{[\s\S]*\}/);
+        if (match) {
+            const parsed = JSON.parse(match[0]);
+            return {
+                labelsToAdd: parsed.labelsToAdd || [],
+                labelsToRemove: parsed.labelsToRemove || [],
+                reasoning: parsed.reasoning || ''
+            };
+        }
+    } catch (e) {
+        console.warn('Failed to auto-label conversation:', e);
+    }
+
+    return { labelsToAdd: [], labelsToRemove: [], reasoning: 'Unable to analyze' };
+};
+
 export default {
     analyzeMeetingIntent,
     extractContactDetails,
     generateNotes,
     qualifyLead,
     analyzeResponseUrgency,
-    analyzeConversation
+    analyzeConversation,
+    autoLabelConversation
 };
