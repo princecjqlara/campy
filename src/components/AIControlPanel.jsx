@@ -429,6 +429,53 @@ export default function AIControlPanel({ conversationId, participantName, onClos
                                 >
                                     {safetyStatus?.canAIRespond ? '⏸️ Pause AI' : '▶️ Resume AI'}
                                 </button>
+
+                                {/* Disable Intuition Follow-ups Toggle */}
+                                <button
+                                    style={{
+                                        ...styles.button,
+                                        ...styles.buttonSecondary,
+                                        width: '100%',
+                                        marginTop: '8px',
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center'
+                                    }}
+                                    onClick={async () => {
+                                        try {
+                                            const { data: conv } = await supabase
+                                                .from('facebook_conversations')
+                                                .select('intuition_followup_disabled')
+                                                .eq('conversation_id', conversationId)
+                                                .single();
+
+                                            const newValue = !conv?.intuition_followup_disabled;
+                                            await supabase
+                                                .from('facebook_conversations')
+                                                .update({ intuition_followup_disabled: newValue })
+                                                .eq('conversation_id', conversationId);
+
+                                            alert(newValue
+                                                ? '✅ Intuition follow-ups disabled. Bot will still respond to messages.'
+                                                : '✅ Intuition follow-ups enabled.');
+                                            await loadAllData();
+                                        } catch (err) {
+                                            console.error('Error toggling intuition:', err);
+                                            alert('Failed to toggle setting');
+                                        }
+                                    }}
+                                >
+                                    <span>🔮 Intuition Follow-ups</span>
+                                    <span style={{
+                                        ...styles.badge,
+                                        ...(safetyStatus?.intuitionDisabled ? styles.badgeRed : styles.badgeGreen)
+                                    }}>
+                                        {safetyStatus?.intuitionDisabled ? 'OFF' : 'ON'}
+                                    </span>
+                                </button>
+                                <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                                    When off, bot still responds but won't proactively follow up
+                                </div>
                             </div>
 
                             {/* Agent Context Section */}

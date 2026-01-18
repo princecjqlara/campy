@@ -168,6 +168,8 @@ export default async function handler(req, res) {
         // Find conversations that need follow-up:
         // - AI is enabled (or null = default enabled)
         // - Human hasn't taken over
+        // - Intuition follow-ups not disabled
+        // - No meeting scheduled
         // - Last message time is older than cutoff (silence period passed)
         const { data: conversations, error } = await db
             .from('facebook_conversations')
@@ -181,10 +183,14 @@ export default async function handler(req, res) {
                 active_goal_id,
                 ai_enabled,
                 human_takeover,
-                lead_status
+                lead_status,
+                intuition_followup_disabled,
+                meeting_scheduled
             `)
             .neq('ai_enabled', false) // Include null (default enabled) and true
             .neq('human_takeover', true) // Include null and false
+            .neq('intuition_followup_disabled', true) // Skip if intuition follow-ups disabled
+            .neq('meeting_scheduled', true) // Skip if meeting already scheduled/mentioned
             // SKIP booked/converted customers - they don't need follow-ups
             .not('lead_status', 'in', '(appointment_booked,converted)')
             // Follow up any conversation that's been inactive for the silence period
@@ -245,42 +251,46 @@ export default async function handler(req, res) {
                 const hoursSince = Math.floor(minutesSince / 60);
                 const daysSince = Math.floor(hoursSince / 24);
 
-                // GRADUATED FOLLOW-UP STRATEGY:
-                // - 0-2 hours: AGGRESSIVE - follow up every 30 minutes
-                // - 2-6 hours: MODERATE - follow up every 2 hours  
-                // - 6-24 hours: MILD - follow up every 4 hours
-                // - 24-72 hours: LIGHT - follow up every 8 hours
-                // - 72+ hours: MINIMAL - follow up once daily
+                // GRADUATED FOLLOW-UP STRATEGY (Updated):
+                // - 0-1 hours: AGGRESSIVE - follow up every 30 minutes
+                // - 1-4 hours: MODERATE - follow up every 1 hour  
+                // - 4-24 hours: MILD - follow up every 6 hours
+                // - 24+ hours: ONCE DAILY at best time to contact
 
                 let waitMinutes;
                 let reason;
                 let aggressiveness;
 
-                if (hoursSince < 2) {
-                    // AGGRESSIVE: Fresh lead, they just responded - act fast!
+                if (hoursSince < 1) {
+                    // AGGRESSIVE: Very fresh lead - act fast!
                     waitMinutes = 30;
-                    reason = `Hot lead! Last contact ${minutesSince} mins ago - quick follow-up`;
+                    reason = `Hot lead! ${minutesSince} mins silent - quick follow-up`;
                     aggressiveness = 'aggressive';
-                } else if (hoursSince < 6) {
-                    // MODERATE: Still warm, but give them some space
-                    waitMinutes = 120; // 2 hours
-                    reason = `Warm lead, ${hoursSince}h silent - moderate follow-up`;
+                } else if (hoursSince < 4) {
+                    // MODERATE: Still warm, check every hour
+                    waitMinutes = 60; // 1 hour
+                    reason = `Warm lead, ${hoursSince}h silent - hourly follow-up`;
                     aggressiveness = 'moderate';
                 } else if (hoursSince < 24) {
-                    // MILD: They may be busy, check in periodically
-                    waitMinutes = 240; // 4 hours
-                    reason = `${hoursSince}h silent - gentle check-in`;
+                    // MILD: They may be busy, check every 6 hours
+                    waitMinutes = 360; // 6 hours
+                    reason = `${hoursSince}h silent - gentle check-in every 6h`;
                     aggressiveness = 'mild';
                 } else {
-                    // 24h+ SILENCE: Use BEST TIME TO CONTACT calculation!
+                    // 24h+ SILENCE: ONCE DAILY at best time to contact!
                     const bestTime = await calculateBestTimeToContact(db, conv.conversation_id, conv.page_id);
                     const msTilBest = bestTime.nextBestTime.getTime() - now.getTime();
-                    waitMinutes = Math.max(30, Math.floor(msTilBest / (1000 * 60))); // At least 30 mins
+
+                    // Ensure at least 1 hour wait and schedule for best time
+                    waitMinutes = Math.max(60, Math.floor(msTilBest / (1000 * 60)));
+
+                    // If best time is very far away (more than 24h), cap at 24h
+                    waitMinutes = Math.min(waitMinutes, 24 * 60);
 
                     if (bestTime.hasData) {
-                        reason = `${daysSince} day(s) silent - scheduling for best time (based on engagement data)`;
+                        reason = `${daysSince} day(s) silent - daily follow-up at best time (${bestTime.nextBestTime.toLocaleTimeString()})`;
                     } else {
-                        reason = `${daysSince} day(s) silent - scheduling for default business hours`;
+                        reason = `${daysSince} day(s) silent - daily follow-up at default business hours`;
                     }
                     aggressiveness = 'best_time';
                 }
