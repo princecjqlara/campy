@@ -230,19 +230,21 @@ export default async function handler(req, res) {
                     .eq('status', 'pending');
 
                 if (existingFollowups && existingFollowups.length > 0) {
-                    // Check if existing follow-up is stale (more than 2 hours old and still pending)
+                    // Check if existing follow-up is stale (scheduled to run more than 2 hours AGO and still pending)
+                    // This means it was supposed to run but didn't - truly stale
                     const oldestFollowup = existingFollowups[0];
-                    const followupAge = (now.getTime() - new Date(oldestFollowup.created_at).getTime()) / (1000 * 60 * 60);
+                    const scheduledTime = new Date(oldestFollowup.scheduled_at);
+                    const hoursPastScheduled = (now.getTime() - scheduledTime.getTime()) / (1000 * 60 * 60);
 
-                    if (followupAge > 2) {
-                        // Stale follow-up - cancel it and reschedule
-                        console.log(`[CRON] Cancelling stale follow-up for ${conv.conversation_id} (${followupAge.toFixed(1)}h old)`);
+                    if (hoursPastScheduled > 2) {
+                        // Truly stale - scheduled to run >2 hours ago but still pending
+                        console.log(`[CRON] Cancelling stale follow-up for ${conv.conversation_id} (was scheduled ${hoursPastScheduled.toFixed(1)}h ago)`);
                         await db
                             .from('ai_followup_schedule')
-                            .update({ status: 'cancelled' })
+                            .update({ status: 'cancelled', error_message: 'Stale: was scheduled >2h ago' })
                             .eq('id', oldestFollowup.id);
                     } else {
-                        // Recent pending follow-up exists, skip
+                        // Follow-up is still scheduled for the future OR recently due - skip
                         results.skipped++;
                         continue;
                     }

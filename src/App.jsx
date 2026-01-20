@@ -22,6 +22,7 @@ import BookingPage from './components/BookingPage';
 import TeamOnlinePanel from './components/TeamOnlinePanel';
 import DeadlineAlerts from './components/DeadlineAlerts';
 import UnassignedClientsPanel from './components/UnassignedClientsPanel';
+import ContactsWithPhonePanel from './components/ContactsWithPhonePanel';
 import { useSupabase } from './hooks/useSupabase';
 import { useScheduledMessageProcessor } from './hooks/useScheduledMessageProcessor';
 import { useClockInOut } from './hooks/useClockInOut';
@@ -564,6 +565,15 @@ function App() {
           {/* Messenger Tab Content */}
           {activeMainTab === 'messenger' && (
             <div style={{ padding: '0 1.5rem' }}>
+              {/* Contacts with Phone Numbers Panel */}
+              <div style={{ marginBottom: '1rem' }}>
+                <ContactsWithPhonePanel
+                  onViewContact={(conversationId) => {
+                    // Could navigate to the conversation in MessengerInbox
+                    console.log('View contact:', conversationId);
+                  }}
+                />
+              </div>
               <MessengerInbox
                 clients={clients}
                 users={allUsers}
