@@ -577,11 +577,11 @@ export default function AIControlPanel({ conversationId, participantName, onClos
                                                         diffHours > 0 ? `${diffHours}h ${diffMins}m` : `${diffMins}m`}
                                                 </span>
                                             </div>
-                                            {nextFollowUp.followup_type && (
+                                            {nextFollowUp.follow_up_type && (
                                                 <div style={styles.statusRow}>
                                                     <span>Type</span>
                                                     <span style={{ fontSize: '13px', color: '#9ca3af' }}>
-                                                        {nextFollowUp.followup_type.replace(/_/g, ' ')}
+                                                        {nextFollowUp.follow_up_type.replace(/_/g, ' ')}
                                                     </span>
                                                 </div>
                                             )}

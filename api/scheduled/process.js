@@ -303,7 +303,7 @@ export default async function handler(req, res) {
                         // Get conversation details and check if AI is enabled
                         const { data: conversation } = await supabase
                             .from('facebook_conversations')
-                            .select('participant_id, participant_name, ai_enabled, lead_status, human_takeover, intuition_followup_disabled')
+                            .select('participant_id, participant_name, ai_enabled, lead_status, pipeline_stage, human_takeover, intuition_followup_disabled')
                             .eq('conversation_id', followup.conversation_id)
                             .single();
 
@@ -328,11 +328,14 @@ export default async function handler(req, res) {
                         }
 
                         // Check if customer is already booked/converted - skip follow-ups
-                        if (conversation?.lead_status === 'appointment_booked' || conversation?.lead_status === 'converted') {
-                            console.log(`[AI FOLLOWUP] Customer is ${conversation.lead_status} - cancelling follow-up for ${followup.conversation_id}`);
+                        // Check BOTH lead_status AND pipeline_stage (booking sets pipeline_stage to 'booked')
+                        if (conversation?.lead_status === 'appointment_booked' ||
+                            conversation?.lead_status === 'converted' ||
+                            conversation?.pipeline_stage === 'booked') {
+                            console.log(`[AI FOLLOWUP] Customer is booked/converted (lead_status=${conversation.lead_status}, pipeline=${conversation.pipeline_stage}) - cancelling follow-up for ${followup.conversation_id}`);
                             await supabase
                                 .from('ai_followup_schedule')
-                                .update({ status: 'cancelled', error_message: `Customer already ${conversation.lead_status}` })
+                                .update({ status: 'cancelled', error_message: `Customer already booked (pipeline_stage: ${conversation.pipeline_stage || 'N/A'}, lead_status: ${conversation.lead_status || 'N/A'})` })
                                 .eq('id', followup.id);
                             continue;
                         }
@@ -438,22 +441,87 @@ Generate ONLY the follow-up message, nothing else:`;
                             console.log(`[AI FOLLOWUP] Using fallback message`);
                         }
 
-                        // Send via Messenger
-                        const response = await fetch(
-                            `https://graph.facebook.com/v21.0/${followup.page_id}/messages?access_token=${page.page_access_token}`,
-                            {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    recipient: { id: recipientId },
-                                    message: { text: message },
-                                    messaging_type: 'MESSAGE_TAG',
-                                    tag: 'ACCOUNT_UPDATE'
-                                })
-                            }
-                        );
+                        // === MESSAGE SPLITTING (same logic as webhook.js) ===
+                        let messageParts = [];
 
-                        if (response.ok) {
+                        if (message.includes('|||')) {
+                            // AI decided to split the message using ||| delimiter
+                            messageParts = message.split('|||').map(p => p.trim()).filter(p => p.length > 0);
+                            console.log(`[AI FOLLOWUP] AI split into ${messageParts.length} parts using |||`);
+                        } else {
+                            // FALLBACK: Force split by sentences if response is long
+                            const sentences = message.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+
+                            if (sentences.length <= 2) {
+                                // Short enough, send as one message
+                                messageParts.push(message);
+                            } else {
+                                // Group sentences into parts (2-3 sentences each)
+                                let currentPart = '';
+                                let sentenceCount = 0;
+
+                                for (const sentence of sentences) {
+                                    currentPart += (currentPart ? ' ' : '') + sentence;
+                                    sentenceCount++;
+
+                                    if (sentenceCount >= 2) {
+                                        messageParts.push(currentPart.trim());
+                                        currentPart = '';
+                                        sentenceCount = 0;
+                                    }
+                                }
+
+                                // Add remaining sentences
+                                if (currentPart.trim()) {
+                                    messageParts.push(currentPart.trim());
+                                }
+
+                                console.log(`[AI FOLLOWUP] Force split into ${messageParts.length} parts by sentences`);
+                            }
+                        }
+
+                        console.log(`[AI FOLLOWUP] Sending ${messageParts.length} message part(s) to ${contactName}`);
+
+                        // Send each message part with delays for natural chat feel
+                        let allPartsSent = true;
+                        for (let i = 0; i < messageParts.length; i++) {
+                            const part = messageParts[i];
+
+                            // Add delay between messages for natural chat feel
+                            if (i > 0) {
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                            }
+
+                            console.log(`[AI FOLLOWUP] Sending part ${i + 1}/${messageParts.length}: "${part.substring(0, 50)}..."`);
+
+                            const response = await fetch(
+                                `https://graph.facebook.com/v21.0/${followup.page_id}/messages?access_token=${page.page_access_token}`,
+                                {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        recipient: { id: recipientId },
+                                        message: { text: part },
+                                        messaging_type: 'MESSAGE_TAG',
+                                        tag: 'ACCOUNT_UPDATE'
+                                    })
+                                }
+                            );
+
+                            if (!response.ok) {
+                                const err = await response.json();
+                                console.error(`[AI FOLLOWUP] Failed to send part ${i + 1}:`, err.error?.message);
+                                allPartsSent = false;
+                                break;
+                            }
+
+                            // Small delay between messages to maintain order
+                            if (i < messageParts.length - 1) {
+                                await new Promise(resolve => setTimeout(resolve, 500));
+                            }
+                        }
+
+                        if (allPartsSent) {
                             // Mark as sent
                             await supabase
                                 .from('ai_followup_schedule')
@@ -463,7 +531,7 @@ Generate ONLY the follow-up message, nothing else:`;
                                 })
                                 .eq('id', followup.id);
 
-                            console.log(`[AI FOLLOWUP] ✅ Sent to ${contactName}`);
+                            console.log(`[AI FOLLOWUP] ✅ Sent ${messageParts.length} part(s) to ${contactName}`);
                             aiFollowupsSent++;
 
                             // Check if there's already a pending follow-up before scheduling another
@@ -521,14 +589,14 @@ Generate ONLY the follow-up message, nothing else:`;
                                 console.log(`[AI FOLLOWUP] ⏭️ Pending follow-up already exists for ${followup.conversation_id} - skipping reschedule`);
                             }
                         } else {
-                            const err = await response.json();
-                            console.error(`[AI FOLLOWUP] Failed:`, err.error?.message);
+                            // Some message parts failed to send
+                            console.error(`[AI FOLLOWUP] Failed to send all message parts`);
 
                             await supabase
                                 .from('ai_followup_schedule')
                                 .update({
                                     status: 'failed',
-                                    error_message: err.error?.message || 'Send failed'
+                                    error_message: 'Failed to send all message parts'
                                 })
                                 .eq('id', followup.id);
 

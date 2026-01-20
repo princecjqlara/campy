@@ -184,6 +184,7 @@ export default async function handler(req, res) {
                 ai_enabled,
                 human_takeover,
                 lead_status,
+                pipeline_stage,
                 intuition_followup_disabled,
                 meeting_scheduled
             `)
@@ -193,6 +194,7 @@ export default async function handler(req, res) {
             .neq('meeting_scheduled', true) // Skip if meeting already scheduled/mentioned
             // SKIP booked/converted customers - they don't need follow-ups
             .not('lead_status', 'in', '(appointment_booked,converted)')
+            .neq('pipeline_stage', 'booked') // Also skip if pipeline_stage is 'booked'
             // Follow up any conversation that's been inactive for the silence period
             .lt('last_message_time', cutoffTime.toISOString())
             .order('last_message_time', { ascending: true }) // Oldest first (most in need of follow-up)

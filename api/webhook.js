@@ -545,6 +545,16 @@ export default async function handler(req, res) {
                         if (event.message) {
                             await handleIncomingMessage(pageId, event);
                         }
+                        // Handle postbacks (Ice Breakers, Get Started buttons, persistent menu)
+                        else if (event.postback) {
+                            console.log('[WEBHOOK] Postback received');
+                            await handlePostbackEvent(pageId, event);
+                        }
+                        // Handle referrals (ad clicks, m.me links with ref parameter)
+                        else if (event.referral) {
+                            console.log('[WEBHOOK] Referral received');
+                            await handleReferralEvent(pageId, event);
+                        }
                         // Silently ignore delivery receipts, read receipts, typing indicators
                         // These are: event.delivery, event.read, event.typing
                     }
@@ -2091,6 +2101,276 @@ AGGRESSIVE FOLLOW-UP GUIDELINES (use minutes, not hours):
 
     } catch (err) {
         console.error('[WEBHOOK] Follow-up analysis exception:', err.message);
+    }
+}
+
+/**
+ * Handle Facebook Postback events (Ice Breakers, Get Started buttons, persistent menu)
+ * These happen when a user clicks a button instead of typing a message
+ */
+async function handlePostbackEvent(pageId, event) {
+    const senderId = event.sender?.id;
+    const timestamp = event.timestamp;
+    const postback = event.postback;
+
+    if (!senderId || !postback) {
+        console.log('[WEBHOOK] Invalid postback event - missing sender or postback data');
+        return;
+    }
+
+    const db = getSupabase();
+    if (!db) return;
+
+    try {
+        const payload = postback.payload || '';
+        const title = postback.title || payload || 'Started conversation';
+
+        console.log(`[WEBHOOK] Postback from ${senderId}: "${title}" (payload: ${payload})`);
+
+        // Check for referral data in the postback (ad clicks include this)
+        const referral = postback.referral;
+        if (referral) {
+            console.log(`[WEBHOOK] Postback includes referral: source=${referral.source}, type=${referral.type}, ad_id=${referral.ad_id}`);
+        }
+
+        // Ensure page exists
+        const { data: existingPage } = await db
+            .from('facebook_pages')
+            .select('page_id')
+            .eq('page_id', pageId)
+            .single();
+
+        if (!existingPage) {
+            await db.from('facebook_pages').insert({
+                page_id: pageId,
+                page_name: `Page ${pageId}`,
+                page_access_token: 'pending',
+                is_active: true
+            });
+        }
+
+        // Look up or create conversation
+        let { data: existingConv } = await db
+            .from('facebook_conversations')
+            .select('*')
+            .eq('participant_id', senderId)
+            .eq('page_id', pageId)
+            .single();
+
+        // Try to get the real conversation ID and participant name from Facebook
+        let conversationId = existingConv?.conversation_id;
+        let participantName = existingConv?.participant_name;
+
+        if (!conversationId || !participantName || participantName === 'Unknown') {
+            const result = await fetchRealConversationId(senderId, pageId);
+            if (result.conversationId) {
+                conversationId = result.conversationId;
+            } else {
+                conversationId = `t_${senderId}`;
+            }
+            if (result.name) {
+                participantName = result.name;
+            }
+        }
+
+        // Try to get name from Facebook API if still missing
+        if (!participantName || participantName === 'Unknown') {
+            participantName = await fetchFacebookUserName(senderId, pageId);
+        }
+
+        // Create/update conversation
+        const conversationData = {
+            conversation_id: conversationId,
+            page_id: pageId,
+            participant_id: senderId,
+            participant_name: participantName || null,
+            last_message_text: title,
+            last_message_time: new Date(timestamp).toISOString(),
+            last_message_from_page: false,
+            unread_count: 1,
+            updated_at: new Date().toISOString(),
+            ai_enabled: existingConv?.ai_enabled ?? true,
+            active_goal_id: existingConv?.active_goal_id || null,
+            source: referral?.source === 'ADS' ? 'ad' : 'postback'
+        };
+
+        const { error: convError } = await db
+            .from('facebook_conversations')
+            .upsert(conversationData, { onConflict: 'conversation_id', ignoreDuplicates: false });
+
+        if (convError) {
+            console.error('[WEBHOOK] Failed to save postback conversation:', convError.message);
+            return;
+        }
+
+        console.log(`[WEBHOOK] ✅ Postback conversation saved: ${conversationId}`);
+
+        // Save as a message for history
+        const messageId = `postback_${senderId}_${timestamp}`;
+        await db.from('facebook_messages').upsert({
+            message_id: messageId,
+            conversation_id: conversationId,
+            sender_id: senderId,
+            message_text: `[Button: ${title}]`,
+            timestamp: new Date(timestamp).toISOString(),
+            is_from_page: false,
+            is_read: false
+        }, { onConflict: 'message_id' });
+
+        // Track engagement
+        const msgDate = new Date(timestamp);
+        await db.from('contact_engagement').insert({
+            conversation_id: conversationId,
+            page_id: pageId,
+            message_direction: 'inbound',
+            day_of_week: msgDate.getDay(),
+            hour_of_day: msgDate.getHours(),
+            engagement_score: 1,
+            message_timestamp: msgDate.toISOString()
+        });
+
+        // Trigger AI response - treat the postback as the first message
+        console.log('[WEBHOOK] Triggering AI response for postback...');
+        await triggerAIResponse(db, conversationId, pageId, existingConv);
+
+    } catch (error) {
+        console.error('[WEBHOOK] Postback handler error:', error.message);
+    }
+}
+
+/**
+ * Handle Facebook Referral events (ad clicks, m.me links with ref parameter)
+ * These happen when a user clicks an ad or a referral link
+ */
+async function handleReferralEvent(pageId, event) {
+    const senderId = event.sender?.id;
+    const timestamp = event.timestamp;
+    const referral = event.referral;
+
+    if (!senderId || !referral) {
+        console.log('[WEBHOOK] Invalid referral event - missing sender or referral data');
+        return;
+    }
+
+    const db = getSupabase();
+    if (!db) return;
+
+    try {
+        const source = referral.source || 'UNKNOWN';
+        const type = referral.type || 'UNKNOWN';
+        const adId = referral.ad_id || null;
+        const ref = referral.ref || null;
+
+        console.log(`[WEBHOOK] Referral from ${senderId}: source=${source}, type=${type}, ad_id=${adId}, ref=${ref}`);
+
+        // Ensure page exists
+        const { data: existingPage } = await db
+            .from('facebook_pages')
+            .select('page_id')
+            .eq('page_id', pageId)
+            .single();
+
+        if (!existingPage) {
+            await db.from('facebook_pages').insert({
+                page_id: pageId,
+                page_name: `Page ${pageId}`,
+                page_access_token: 'pending',
+                is_active: true
+            });
+        }
+
+        // Look up or create conversation
+        let { data: existingConv } = await db
+            .from('facebook_conversations')
+            .select('*')
+            .eq('participant_id', senderId)
+            .eq('page_id', pageId)
+            .single();
+
+        // Try to get the real conversation ID and participant name
+        let conversationId = existingConv?.conversation_id;
+        let participantName = existingConv?.participant_name;
+
+        if (!conversationId || !participantName || participantName === 'Unknown') {
+            const result = await fetchRealConversationId(senderId, pageId);
+            if (result.conversationId) {
+                conversationId = result.conversationId;
+            } else {
+                conversationId = `t_${senderId}`;
+            }
+            if (result.name) {
+                participantName = result.name;
+            }
+        }
+
+        if (!participantName || participantName === 'Unknown') {
+            participantName = await fetchFacebookUserName(senderId, pageId);
+        }
+
+        // Create welcome message based on source
+        const welcomeContext = source === 'ADS'
+            ? 'Clicked on Facebook ad'
+            : ref
+                ? `Referral: ${ref}`
+                : 'Started conversation via link';
+
+        // Create/update conversation
+        const conversationData = {
+            conversation_id: conversationId,
+            page_id: pageId,
+            participant_id: senderId,
+            participant_name: participantName || null,
+            last_message_text: welcomeContext,
+            last_message_time: new Date(timestamp).toISOString(),
+            last_message_from_page: false,
+            unread_count: 1,
+            updated_at: new Date().toISOString(),
+            ai_enabled: existingConv?.ai_enabled ?? true,
+            active_goal_id: existingConv?.active_goal_id || null,
+            source: source === 'ADS' ? 'ad' : 'referral'
+        };
+
+        const { error: convError } = await db
+            .from('facebook_conversations')
+            .upsert(conversationData, { onConflict: 'conversation_id', ignoreDuplicates: false });
+
+        if (convError) {
+            console.error('[WEBHOOK] Failed to save referral conversation:', convError.message);
+            return;
+        }
+
+        console.log(`[WEBHOOK] ✅ Referral conversation saved: ${conversationId}`);
+
+        // Save as a message for history
+        const messageId = `referral_${senderId}_${timestamp}`;
+        await db.from('facebook_messages').upsert({
+            message_id: messageId,
+            conversation_id: conversationId,
+            sender_id: senderId,
+            message_text: `[${welcomeContext}]`,
+            timestamp: new Date(timestamp).toISOString(),
+            is_from_page: false,
+            is_read: false
+        }, { onConflict: 'message_id' });
+
+        // Track engagement
+        const msgDate = new Date(timestamp);
+        await db.from('contact_engagement').insert({
+            conversation_id: conversationId,
+            page_id: pageId,
+            message_direction: 'inbound',
+            day_of_week: msgDate.getDay(),
+            hour_of_day: msgDate.getHours(),
+            engagement_score: 2, // Higher score for ad clicks
+            message_timestamp: msgDate.toISOString()
+        });
+
+        // Trigger AI response
+        console.log('[WEBHOOK] Triggering AI response for referral...');
+        await triggerAIResponse(db, conversationId, pageId, existingConv);
+
+    } catch (error) {
+        console.error('[WEBHOOK] Referral handler error:', error.message);
     }
 }
 
