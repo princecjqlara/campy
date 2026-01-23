@@ -1393,6 +1393,8 @@ class FacebookService {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         recipient: { id: recipientId },
+                        messaging_type: 'MESSAGE_TAG',
+                        tag: 'ACCOUNT_UPDATE',
                         message: {
                             attachment: {
                                 type: 'template',
