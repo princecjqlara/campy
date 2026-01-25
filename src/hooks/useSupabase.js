@@ -204,7 +204,7 @@ export const useSupabase = () => {
       return expenses;
     }
     // Fallback to localStorage
-    return JSON.parse(localStorage.getItem('campy_expenses') || '{"basic": 500, "star": 800, "fire": 1000, "crown": 1500, "custom": 0}');
+    return JSON.parse(localStorage.getItem('campy_expenses') || '{"basic": 500, "star": 800, "fire": 1000, "crown": 1500, "coaching": 0, "custom": 0}');
   };
 
   const saveExpenses = async (expenses) => {
@@ -249,7 +249,7 @@ export const useSupabase = () => {
       return JSON.parse(stored);
     }
     // Default package prices
-    return { basic: 1799, star: 2999, fire: 3499, crown: 5799, custom: 0 };
+    return { basic: 1799, star: 2999, fire: 3499, crown: 5799, coaching: 1500, custom: 0 };
   };
 
   const savePackagePrices = async (prices) => {

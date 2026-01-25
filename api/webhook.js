@@ -1078,11 +1078,17 @@ async function triggerAIResponse(db, conversationId, pageId, conversation) {
         const config = settings?.value || {};
 
         console.log('[WEBHOOK] AI Config check:', {
+            global_bot_enabled: config.global_bot_enabled,
             auto_respond: config.auto_respond_to_new_messages,
             conv_ai_enabled: conversation?.ai_enabled,
             human_takeover: conversation?.human_takeover,
             cooldown_until: conversation?.cooldown_until
         });
+
+        if (config.global_bot_enabled === false) {
+            console.log('[WEBHOOK] Global bot disabled - skipping AI response');
+            return;
+        }
 
         // Check admin settings - respect all configurations
         if (config.auto_respond_to_new_messages === false) {
